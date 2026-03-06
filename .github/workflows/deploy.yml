@@ -51,6 +51,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: w9jds/firebase-action@master
         with:
-          args: deploy --only firestore:rules
+          args: deploy --only firestore:rules --project ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
