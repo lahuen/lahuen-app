@@ -37,6 +37,7 @@ export interface Producto {
   precio: number;
   proveedor: string;
   lote: string;
+  imagen: string;
   vencimiento: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -53,6 +53,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
                 <input type="text" name="proveedor" class="form-control" placeholder="Lahuen" value="Lahuen" />
               </div>
             </div>
+            <div class="form-group">
+              <label class="form-label">Imagen (URL)</label>
+              <input type="url" name="imagen" class="form-control" placeholder="https://... (opcional)" />
+            </div>
             <div class="grid-2">
               <div class="form-group">
                 <label class="form-label">Lote</label>
@@ -96,6 +100,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         precio: Number((productForm.precio as HTMLInputElement).value) || 0,
         proveedor: (productForm.proveedor as HTMLInputElement).value.trim(),
         lote: (productForm.lote as HTMLInputElement).value.trim(),
+        imagen: (productForm.imagen as HTMLInputElement).value.trim(),
         vencimiento: vencStr ? Timestamp.fromDate(new Date(vencStr + 'T00:00:00')) : null,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -152,7 +157,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       const isExpired = p.vencimiento && p.vencimiento.toDate() <= new Date();
       const cls = isExpired ? 'expired' : (isLow || isZero ? 'low-stock' : '');
 
+      const imgHtml = p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" class="stock-card-img" />` : '';
+
       return `<div class="stock-card ${cls}" data-id="${p.id}">
+        ${imgHtml}
         <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--sp-3);">
           <div>
             <strong>${esc(p.nombre)}</strong>

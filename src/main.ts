@@ -21,7 +21,7 @@ onAuthStateChanged(auth, (user) => {
 function renderApp() {
   if (cleanup) { cleanup(); cleanup = null; }
 
-  const hash = window.location.hash || '#crm';
+  const hash = window.location.hash || '#stock';
   const email = auth.currentUser?.email || '';
   const userName = esc(email.split('@')[0]);
 
@@ -32,10 +32,10 @@ function renderApp() {
         <span>CRM</span>
       </div>
       <nav class="tab-nav">
-        <a class="tab ${hash === '#crm' ? 'active' : ''}" href="#crm">CRM</a>
         <a class="tab ${hash === '#stock' ? 'active' : ''}" href="#stock">Stock</a>
-        <a class="tab ${hash === '#nuevo' ? 'active' : ''}" href="#nuevo">Nuevo</a>
         <a class="tab ${hash === '#movimientos' ? 'active' : ''}" href="#movimientos">Movimientos</a>
+        <a class="tab ${hash === '#crm' ? 'active' : ''}" href="#crm">CRM</a>
+        <a class="tab ${hash === '#nuevo' ? 'active' : ''}" href="#nuevo">Nuevo</a>
       </nav>
       <div class="nav-user">
         <span class="text-secondary text-xs">${userName}</span>
@@ -70,14 +70,14 @@ function renderApp() {
       case '#nuevo':
         loadComponent('crm-form', view);
         break;
-      case '#stock':
-        loadComponent('stock-dashboard', view);
+      case '#crm':
+        loadComponent('crm-dashboard', view);
         break;
       case '#movimientos':
         loadComponent('stock-movimientos', view);
         break;
       default:
-        loadComponent('crm-dashboard', view);
+        loadComponent('stock-dashboard', view);
         break;
     }
   }
