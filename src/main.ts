@@ -5,6 +5,30 @@ import { getUsuario } from './lib/usuarios';
 import { esc } from './lib/sanitize';
 import './style.css';
 
+// Global error boundary
+window.addEventListener('error', (e) => {
+  console.error('Uncaught error:', e.error);
+  showErrorScreen();
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled rejection:', e.reason);
+});
+
+function showErrorScreen() {
+  const app = document.getElementById('app');
+  if (!app) return;
+  // Only show if the app looks broken (empty or stuck)
+  if (app.children.length === 0 || app.innerHTML.includes('Cargando...')) {
+    app.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:24px;text-align:center;">
+        <p style="font-size:17px;font-weight:600;margin-bottom:8px;">Algo salio mal</p>
+        <p style="font-size:13px;color:#6e6e73;margin-bottom:16px;">Pudo ser un problema de conexion o permisos.</p>
+        <button onclick="location.reload()" style="padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:100px;font-size:13px;cursor:pointer;">Recargar</button>
+      </div>
+    `;
+  }
+}
+
 const root = document.getElementById('app')!;
 let cleanup: (() => void) | null = null;
 let currentRole: string | null = null;

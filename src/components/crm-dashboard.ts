@@ -131,7 +131,7 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
     document.getElementById('crm-count')!.textContent = items.length + ' prospectos';
 
     if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><p>Sin prospectos</p></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><p>Sin prospectos</p><p style="margin-top:var(--sp-2);"><a href="#nuevo" class="btn btn-primary btn-sm">+ Agregar primer prospecto</a></p></td></tr>';
       return;
     }
 

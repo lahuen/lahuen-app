@@ -41,8 +41,9 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
     if (!text) return;
 
     sendBtn.disabled = true;
+    sendBtn.textContent = '...';
     hintEl.style.display = '';
-    hintEl.textContent = 'Procesando...';
+    hintEl.innerHTML = '<span class="smart-loading">Pensando</span>';
     confirmEl.style.display = 'none';
 
     try {
@@ -54,6 +55,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
       hintEl.style.display = '';
     } finally {
       sendBtn.disabled = false;
+      sendBtn.textContent = 'Enviar';
     }
   }
 

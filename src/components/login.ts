@@ -1,17 +1,8 @@
 import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { collection, getDocs, query, limit as fbLimit } from 'firebase/firestore';
+import { auth, db, googleProvider } from '../lib/firebase';
 import { showToast } from '../lib/toast';
 import { getUsuario } from '../lib/usuarios';
-
-// Temporary fallback until usuarios collection is seeded
-const LEGACY_EMAILS = [
-  'cbd.preparados@gmail.com',
-  'gmedina86@gmail.com',
-  'fefox911@gmail.com',
-  'lahuencoop@gmail.com',
-  'rodrigocbdthc@gmail.com',
-  'walter.medina.pourcel@gmail.com',
-];
 
 export function renderLogin(container: HTMLElement) {
   container.innerHTML = `
@@ -32,8 +23,16 @@ export function renderLogin(container: HTMLElement) {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email || '';
-      const usuario = await getUsuario(email);
-      if (!usuario && !LEGACY_EMAILS.includes(email)) {
+
+      // Check dynamic list first
+      const usuario = await getUsuario(email).catch(() => null);
+      if (usuario) return; // Authorized via usuarios collection
+
+      // Fallback: test if server-side legacy rules grant access
+      try {
+        await getDocs(query(collection(db, 'productos'), fbLimit(1)));
+        // Legacy authorized — Firestore rules allowed the read
+      } catch {
         await auth.signOut();
         showToast('Email no autorizado', 'error');
       }

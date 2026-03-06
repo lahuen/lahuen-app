@@ -37,7 +37,33 @@ Para nuevo_prospecto:
 Si no podes determinar la accion o faltan datos criticos:
 {"action":"error","message":"descripcion del problema"}`;
 
+// Rate limiting: min 3s between calls, max 30 calls per day
+let lastCallTime = 0;
+const DAILY_KEY = 'lahuen_gemini_count';
+const MAX_DAILY = 30;
+const MIN_INTERVAL = 3000;
+
+function checkRateLimit(): boolean {
+  const now = Date.now();
+  if (now - lastCallTime < MIN_INTERVAL) return false;
+
+  const stored = localStorage.getItem(DAILY_KEY);
+  const data = stored ? JSON.parse(stored) : { date: '', count: 0 };
+  const today = new Date().toISOString().slice(0, 10);
+  if (data.date !== today) { data.date = today; data.count = 0; }
+  if (data.count >= MAX_DAILY) return false;
+
+  data.count++;
+  localStorage.setItem(DAILY_KEY, JSON.stringify(data));
+  lastCallTime = now;
+  return true;
+}
+
 export async function parseSmartInput(input: string): Promise<SmartAction> {
+  if (!checkRateLimit()) {
+    return localParse(input);
+  }
+
   try {
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\nEntrada: "${input}"` }] }],

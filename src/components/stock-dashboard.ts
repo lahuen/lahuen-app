@@ -21,6 +21,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       </div>
 
       <div class="toolbar">
+        <div class="search-wrap">
+          <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" class="search-input" placeholder="Buscar producto..." id="stock-search" />
+        </div>
         <button class="btn btn-primary btn-sm" id="add-product-btn">+ Producto</button>
         <span id="stock-count" class="badge badge-neutral">-- productos</span>
       </div>
@@ -88,6 +92,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   addBtn.addEventListener('click', () => { addForm.style.display = addForm.style.display === 'none' ? '' : 'none'; });
   document.getElementById('cancel-product')!.addEventListener('click', () => { addForm.style.display = 'none'; });
 
+  // Search
+  const stockSearch = document.getElementById('stock-search') as HTMLInputElement;
+  stockSearch.addEventListener('input', renderGrid);
+
   // Product form submit
   const productForm = document.getElementById('product-form') as HTMLFormElement;
   productForm.addEventListener('submit', async (e) => {
@@ -147,14 +155,22 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
   function renderGrid() {
     const grid = document.getElementById('stock-grid')!;
-    document.getElementById('stock-count')!.textContent = allProducts.length + ' productos';
+    const searchQ = (stockSearch?.value || '').toLowerCase();
+    const filtered = searchQ
+      ? allProducts.filter(p => p.nombre.toLowerCase().includes(searchQ) || (p.proveedor || '').toLowerCase().includes(searchQ))
+      : allProducts;
+    document.getElementById('stock-count')!.textContent = filtered.length + ' productos';
 
-    if (allProducts.length === 0) {
-      grid.innerHTML = '<div class="empty-state"><p>Sin productos. Agrega uno para empezar.</p></div>';
+    if (filtered.length === 0 && allProducts.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><p>Sin productos todavia</p><button class="btn btn-primary btn-sm" style="margin-top:var(--sp-3);" onclick="document.getElementById(\'add-product-btn\').click()">+ Agregar primer producto</button></div>';
+      return;
+    }
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><p>Sin resultados</p></div>';
       return;
     }
 
-    grid.innerHTML = allProducts.map(p => {
+    grid.innerHTML = filtered.map(p => {
       const isLow = p.cantidad > 0 && p.cantidad < 20;
       const isZero = p.cantidad === 0;
       const isExpired = p.vencimiento && p.vencimiento.toDate() <= new Date();
@@ -230,6 +246,17 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       const motivo = (document.getElementById(`inline-motivo-${productoId}`) as HTMLSelectElement).value;
 
       if (!qty || qty <= 0) { showToast('Ingresa una cantidad valida', 'error'); return; }
+
+      // Confirmation for exits
+      if (tipo === 'salida') {
+        const confirmEl = document.getElementById(`inline-confirm-${productoId}`) as HTMLButtonElement;
+        if (confirmEl.dataset.confirmed !== 'true') {
+          confirmEl.textContent = `Confirmar -${qty}?`;
+          confirmEl.classList.replace('btn-primary', 'btn-danger');
+          confirmEl.dataset.confirmed = 'true';
+          return;
+        }
+      }
 
       try {
         if (tipo === 'entrada') {
