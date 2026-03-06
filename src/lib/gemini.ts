@@ -3,6 +3,7 @@ import { app } from './firebase';
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 const model = getGenerativeModel(ai, { model: 'gemini-2.5-flash' });
+export { model as geminiModel };
 
 export type SmartAction =
   | { action: 'stock_entrada'; producto: string; cantidad: number; unidad: string; motivo: string }

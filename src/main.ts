@@ -35,6 +35,7 @@ function renderApp() {
         <a class="tab ${hash === '#stock' ? 'active' : ''}" href="#stock">Stock</a>
         <a class="tab ${hash === '#movimientos' ? 'active' : ''}" href="#movimientos">Movimientos</a>
         <a class="tab ${hash === '#crm' ? 'active' : ''}" href="#crm">CRM</a>
+        <a class="tab ${hash === '#agenda' ? 'active' : ''}" href="#agenda">Agenda</a>
         <a class="tab ${hash === '#nuevo' ? 'active' : ''}" href="#nuevo">Nuevo</a>
       </nav>
       <div class="nav-user">
@@ -49,6 +50,7 @@ function renderApp() {
       </div>
     </header>
     <div id="smart-input-container"></div>
+    <div id="suggestions-container"></div>
     <main class="content" id="view">
       <div class="empty-state"><p>Cargando...</p></div>
     </main>
@@ -59,6 +61,10 @@ function renderApp() {
   // Smart input bar
   const smartContainer = document.getElementById('smart-input-container')!;
   import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer));
+
+  // AI suggestions banner (async, non-blocking)
+  const suggestionsContainer = document.getElementById('suggestions-container')!;
+  import('./components/suggestions-banner').then(({ renderSuggestionsBanner }) => renderSuggestionsBanner(suggestionsContainer));
 
   const view = document.getElementById('view')!
 
@@ -72,6 +78,9 @@ function renderApp() {
         break;
       case '#crm':
         loadComponent('crm-dashboard', view);
+        break;
+      case '#agenda':
+        loadComponent('agenda-dashboard', view);
         break;
       case '#movimientos':
         loadComponent('stock-movimientos', view);
@@ -104,6 +113,11 @@ async function loadComponent(name: string, container: HTMLElement, param?: strin
       case 'stock-movimientos': {
         const { renderStockMovimientos } = await import('./components/stock-movimientos');
         cleanup = renderStockMovimientos(container) || null;
+        break;
+      }
+      case 'agenda-dashboard': {
+        const { renderAgendaDashboard } = await import('./components/agenda-dashboard');
+        cleanup = renderAgendaDashboard(container) || null;
         break;
       }
     }
