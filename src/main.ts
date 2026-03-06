@@ -36,9 +36,15 @@ let currentNombre: string | null = null;
 
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    const u = await getUsuario(user.email || '');
-    currentRole = u?.role || null;
-    currentNombre = u?.nombre || null;
+    try {
+      const u = await getUsuario(user.email || '');
+      currentRole = u?.role || null;
+      currentNombre = u?.nombre || null;
+    } catch {
+      // Firestore unavailable — continue with defaults
+      currentRole = null;
+      currentNombre = null;
+    }
     renderApp();
     window.addEventListener('hashchange', renderApp);
     import('./lib/notifications').then(({ checkAndNotify }) => checkAndNotify());
