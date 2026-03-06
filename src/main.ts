@@ -56,7 +56,11 @@ function renderApp() {
 
   document.getElementById('logout-btn')!.addEventListener('click', () => signOut(auth));
 
-  const view = document.getElementById('view')!;
+  // Smart input bar
+  const smartContainer = document.getElementById('smart-input-container')!;
+  import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer));
+
+  const view = document.getElementById('view')!
 
   if (hash.startsWith('#editar/')) {
     const id = hash.split('/')[1];

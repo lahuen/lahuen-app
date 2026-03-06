@@ -13,11 +13,14 @@ let pendingInput = '';
 export function renderSmartInput(container: HTMLElement): (() => void) | null {
   container.innerHTML = `
     <div class="smart-input-bar">
-      <input type="text" class="smart-input" id="smart-input" placeholder="Decime que queres hacer..." value="${esc(pendingInput)}" />
-      <button class="btn btn-primary btn-sm" id="smart-send">Enviar</button>
+      <label class="smart-input-label">Entrada rapida</label>
+      <div class="smart-input-row">
+        <input type="text" class="smart-input" id="smart-input" placeholder="ej: cosechamos 200 bandejas lechuga, venta 50 rucula a Restaurant..." value="${esc(pendingInput)}" />
+        <button class="btn btn-primary btn-sm" id="smart-send">Enviar</button>
+      </div>
+      <p class="smart-hint" id="smart-hint" style="display:none;"></p>
+      <div id="smart-confirm" style="display:none;"></div>
     </div>
-    <div class="smart-hint" id="smart-hint" style="display:none;"></div>
-    <div id="smart-confirm" style="display:none;"></div>
   `;
 
   const input = document.getElementById('smart-input') as HTMLInputElement;
@@ -131,7 +134,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
     hintEl.textContent = message;
     confirmEl.style.display = '';
     confirmEl.innerHTML = `
-      <div class="smart-input-bar" style="top:auto;border-top:1px solid var(--color-border);border-bottom:none;gap:var(--sp-2);justify-content:flex-end;">
+      <div style="display:flex;gap:var(--sp-2);justify-content:flex-end;">
         <button class="btn btn-secondary btn-sm" id="smart-cancel">Cancelar</button>
         <button class="btn btn-primary btn-sm" id="smart-ok">Confirmar</button>
       </div>

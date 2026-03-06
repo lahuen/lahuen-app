@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/lahuen-app/',
+  base: '/',
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
@@ -10,12 +10,12 @@ export default defineConfig({
         name: 'Lahuen CRM',
         short_name: 'Lahuen',
         description: 'CRM + Stock — Cooperativa Lahuen',
-        start_url: '/lahuen-app/',
+        start_url: '/',
         display: 'standalone',
         background_color: '#f5f5f7',
         theme_color: '#16a34a',
         icons: [
-          { src: '/lahuen-app/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
       },
       workbox: {
