@@ -11,6 +11,7 @@ onAuthStateChanged(auth, (user) => {
   if (user) {
     renderApp();
     window.addEventListener('hashchange', renderApp);
+    import('./lib/notifications').then(({ checkAndNotify }) => checkAndNotify());
   } else {
     window.removeEventListener('hashchange', renderApp);
     if (cleanup) { cleanup(); cleanup = null; }
