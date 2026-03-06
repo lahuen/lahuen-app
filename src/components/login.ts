@@ -3,6 +3,16 @@ import { auth, googleProvider } from '../lib/firebase';
 import { showToast } from '../lib/toast';
 import { getUsuario } from '../lib/usuarios';
 
+// Temporary fallback until usuarios collection is seeded
+const LEGACY_EMAILS = [
+  'cbd.preparados@gmail.com',
+  'gmedina86@gmail.com',
+  'fefox911@gmail.com',
+  'lahuencoop@gmail.com',
+  'rodrigocbdthc@gmail.com',
+  'walter.medina.pourcel@gmail.com',
+];
+
 export function renderLogin(container: HTMLElement) {
   container.innerHTML = `
     <div class="login-screen">
@@ -23,7 +33,7 @@ export function renderLogin(container: HTMLElement) {
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email || '';
       const usuario = await getUsuario(email);
-      if (!usuario) {
+      if (!usuario && !LEGACY_EMAILS.includes(email)) {
         await auth.signOut();
         showToast('Email no autorizado', 'error');
       }
