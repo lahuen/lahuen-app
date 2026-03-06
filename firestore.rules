@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTeamMember() {
+      return request.auth != null &&
+             request.auth.token.email in [
+               'cbd.preparados@gmail.com',
+               'gmedina86@gmail.com',
+               'fefox911@gmail.com',
+               'lahuencoop@gmail.com',
+               'rodrigocbdthc@gmail.com',
+               'walter.medina.pourcel@gmail.com'
+             ];
+    }
+
+    match /prospectos/{docId} {
+      allow read: if isTeamMember();
+      allow create: if isTeamMember()
+                    && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTeamMember();
+      allow delete: if isTeamMember();
+    }
+
+    match /productos/{docId} {
+      allow read: if isTeamMember();
+      allow create: if isTeamMember()
+                    && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTeamMember();
+      allow delete: if isTeamMember();
+    }
+
+    match /movimientos/{docId} {
+      allow read: if isTeamMember();
+      allow create: if isTeamMember()
+                    && request.resource.data.createdBy == request.auth.uid;
+      // Immutable audit trail
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
