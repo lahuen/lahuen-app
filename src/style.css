@@ -273,6 +273,28 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .action-btn.wa:hover { background: rgba(37,211,102,.1); }
 .action-btn svg { width: 18px; height: 18px; }
 
+/* Tooltips */
+.action-btn { position: relative; }
+.action-btn::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  background: var(--color-text);
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 10;
+}
+.action-btn:hover::after { opacity: 1; }
+
 /* ── Card / Form ────────────────────────────────────────────────────────── */
 
 .card {
@@ -436,16 +458,34 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .stock-card.low-stock { border-left: 3px solid var(--color-warning); }
 .stock-card.expired { border-left: 3px solid var(--color-danger); }
 
-/* ── Movement List ──────────────────────────────────────────────────────── */
+/* ── Movement Cards ─────────────────────────────────────────────────────── */
 
-.movement-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--color-border);
+.mov-cards { display: none; }
+.mov-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-3);
 }
-.movement-item:last-child { border-bottom: none; }
+
+/* ── CRM Mobile Cards ───────────────────────────────────────────────────── */
+
+.crm-cards { display: none; }
+.crm-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-3);
+}
+.crm-card.row-overdue { border-left: 3px solid var(--color-warning); background: rgba(255, 149, 0, 0.04); }
+.crm-card.row-faded { opacity: 0.5; }
+.crm-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--sp-2); }
+.crm-card-header strong { font-size: var(--text-base); }
+.crm-card-body { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.crm-card-body .text-xs { line-height: 1.4; }
+.crm-card-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; border-top: 1px solid var(--color-border); padding-top: var(--sp-3); }
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
@@ -461,6 +501,16 @@ tbody tr:hover { background: var(--color-accent-muted); }
   .app-brand span { display: none; }
   .stat-value { font-size: var(--text-xl); }
   .smart-input-bar { padding: var(--sp-3) var(--sp-3); }
+
+  /* Switch table to cards on mobile */
+  .table-wrap { display: none; }
+  .crm-cards { display: block; }
+  .mov-cards { display: block; }
+  .mov-cards + .table-wrap,
+  .page .table-wrap { display: none; }
+
+  /* Tooltips: hide on touch */
+  .action-btn::after { display: none; }
 }
 
 @media (max-width: 480px) {
