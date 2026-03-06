@@ -7,7 +7,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Lahuen CRM',
+        name: 'Lahuen APP',
         short_name: 'Lahuen',
         description: 'CRM + Stock — Cooperativa Lahuen',
         start_url: '/',

@@ -16,7 +16,7 @@ export function renderLogin(container: HTMLElement) {
     <div class="login-screen">
       <div class="login-card">
         <img src="logo.svg" alt="Lahuen" class="login-logo" />
-        <h1 class="login-title"><span>CRM</span></h1>
+        <h1 class="login-title"><span>APP</span></h1>
         <p class="login-subtitle">Inicia sesion con tu cuenta de Google</p>
         <button class="btn btn-primary login-btn" id="google-login">
           Iniciar con Google
