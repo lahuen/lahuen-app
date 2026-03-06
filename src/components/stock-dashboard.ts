@@ -2,6 +2,7 @@ import { collection, onSnapshot, query, orderBy, addDoc, Timestamp } from 'fireb
 import { db, auth } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
+import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit } from '../lib/stock';
 import type { Producto } from '../lib/types';
@@ -93,8 +94,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     e.preventDefault();
     try {
       const vencStr = (productForm.vencimiento as HTMLInputElement).value;
-      await addDoc(collection(db, 'productos'), {
-        nombre: (productForm.nombre as HTMLInputElement).value.trim(),
+      const nombreValue = (productForm.nombre as HTMLInputElement).value.trim();
+      const ref = await addDoc(collection(db, 'productos'), {
+        nombre: nombreValue,
         cantidad: 0,
         unidad: (productForm.unidad as HTMLSelectElement).value,
         precio: Number((productForm.precio as HTMLInputElement).value) || 0,
@@ -106,6 +108,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         updatedAt: Timestamp.now(),
         createdBy: auth.currentUser?.uid || '',
       });
+      logAudit('create', 'productos', ref.id, nombreValue);
       showToast('Producto creado', 'success');
       productForm.reset();
       addForm.style.display = 'none';
@@ -171,6 +174,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         <div class="text-xs text-secondary" style="margin-bottom:var(--sp-3);">
           ${p.precio ? formatCurrency(p.precio) + ' / ' + esc(p.unidad) : ''}
           ${p.vencimiento ? ' &middot; Vence: ' + formatDate(p.vencimiento) : ''}
+          ${p.updatedBy ? `<br>Editado por ${esc(p.updatedBy.split('@')[0])}` : ''}
         </div>
         <div style="display:flex;gap:var(--sp-2);">
           <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>

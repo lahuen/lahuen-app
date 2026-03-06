@@ -97,6 +97,20 @@ body {
 
 .nav-user { display: flex; align-items: center; gap: var(--sp-2); }
 
+/* Hamburger — hidden on desktop */
+.hamburger-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-secondary);
+  align-items: center;
+  transition: background .15s;
+}
+.hamburger-btn:hover { background: var(--color-bg); }
+
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
 .page { max-width: 1100px; margin: 0 auto; padding: var(--sp-5) var(--sp-4); }
@@ -589,19 +603,46 @@ tbody tr:hover { background: var(--color-accent-muted); }
   .search-wrap { min-width: 100%; }
   .filter-select { width: 100%; }
   .page { padding: var(--sp-4) var(--sp-3); }
-  .app-header { padding: var(--sp-3) var(--sp-3); }
+  .app-header { padding: var(--sp-3) var(--sp-3); position: sticky; top: 0; }
   .app-brand span { display: none; }
   .stat-value { font-size: var(--text-xl); }
   .smart-input-bar { padding: var(--sp-3) var(--sp-3); }
   .suggestions-bar { padding: var(--sp-3) var(--sp-3); }
   .agenda-event { padding: var(--sp-3) var(--sp-3); }
 
+  /* Hamburger visible on mobile */
+  .hamburger-btn { display: flex; }
+
+  /* Tab nav as dropdown */
+  .tab-nav {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+    flex-direction: column;
+    padding: var(--sp-2);
+    gap: var(--sp-1);
+    z-index: 99;
+    border-radius: 0;
+  }
+  .app-header.nav-open .tab-nav { display: flex; }
+
+  .tab-nav .tab {
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    text-align: left;
+  }
+
   /* Switch table to cards on mobile */
   .table-wrap { display: none; }
   .crm-cards { display: block; }
   .mov-cards { display: block; }
-  .mov-cards + .table-wrap,
-  .page .table-wrap { display: none; }
+  .audit-cards { display: block; }
 
   /* Tooltips: hide on touch */
   .action-btn::after { display: none; }
@@ -610,5 +651,8 @@ tbody tr:hover { background: var(--color-accent-muted); }
 @media (max-width: 480px) {
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .modal-box { padding: var(--sp-5); }
-  .tab { padding: 6px 10px; font-size: var(--text-xs); }
 }
+
+/* ── Audit ─────────────────────────────────────────────────────────────── */
+.audit-cards { display: none; }
+.badge-info { background: rgba(59,130,246,.12); color: #2563eb; }

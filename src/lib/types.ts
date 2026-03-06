@@ -18,6 +18,7 @@ export interface Prospecto {
   createdAt: Timestamp;
   createdBy: string;
   updatedAt: Timestamp;
+  updatedBy?: string;
 }
 
 export type PerfilType =
@@ -42,6 +43,24 @@ export interface Producto {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;
+  updatedBy?: string;
+}
+
+export interface Usuario {
+  email: string;
+  nombre: string;
+  role: 'admin' | 'miembro';
+}
+
+export interface AuditEntry {
+  action: 'create' | 'update' | 'delete';
+  collection: string;
+  docId: string;
+  docLabel: string;
+  userEmail: string;
+  userId: string;
+  timestamp: Timestamp;
+  changes?: string;
 }
 
 export interface Movimiento {

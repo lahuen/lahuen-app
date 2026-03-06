@@ -1,15 +1,7 @@
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { showToast } from '../lib/toast';
-
-const ALLOWED_EMAILS = [
-  'cbd.preparados@gmail.com',
-  'gmedina86@gmail.com',
-  'fefox911@gmail.com',
-  'lahuencoop@gmail.com',
-  'rodrigocbdthc@gmail.com',
-  'walter.medina.pourcel@gmail.com',
-];
+import { getUsuario } from '../lib/usuarios';
 
 export function renderLogin(container: HTMLElement) {
   container.innerHTML = `
@@ -30,7 +22,8 @@ export function renderLogin(container: HTMLElement) {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email || '';
-      if (!ALLOWED_EMAILS.includes(email)) {
+      const usuario = await getUsuario(email);
+      if (!usuario) {
         await auth.signOut();
         showToast('Email no autorizado', 'error');
       }

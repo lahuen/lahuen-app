@@ -1,5 +1,6 @@
 import { runTransaction, doc, collection, Timestamp } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import { logAudit } from './audit';
 
 /**
  * Record a stock entry (cosecha, compra, devolucion).
@@ -20,6 +21,7 @@ export async function recordStockEntry(
     tx.update(prodRef, {
       cantidad: current + cantidad,
       updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
     });
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -35,6 +37,7 @@ export async function recordStockEntry(
       createdAt: Timestamp.now(),
     });
   });
+  logAudit('update', 'productos', productoId, productoNombre, `entrada: +${cantidad} (${motivo})`);
 }
 
 /**
@@ -62,6 +65,7 @@ export async function recordSale(
     tx.update(prodRef, {
       cantidad: current - cantidad,
       updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
     });
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -79,6 +83,7 @@ export async function recordSale(
       ...(precioVenta != null ? { precioVenta } : {}),
     });
   });
+  logAudit('update', 'productos', productoId, productoNombre, `venta: -${cantidad}`);
 }
 
 /**
@@ -103,6 +108,7 @@ export async function recordStockExit(
     tx.update(prodRef, {
       cantidad: current - cantidad,
       updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
     });
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -118,4 +124,5 @@ export async function recordStockExit(
       createdAt: Timestamp.now(),
     });
   });
+  logAudit('update', 'productos', productoId, productoNombre, `salida: -${cantidad} (${motivo})`);
 }

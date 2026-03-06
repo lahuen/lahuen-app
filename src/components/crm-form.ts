@@ -2,6 +2,7 @@ import { collection, addDoc, doc, getDoc, updateDoc, Timestamp } from 'firebase/
 import { db, auth } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
+import { logAudit } from '../lib/audit';
 import { PERFILES, SEGMENTOS } from '../lib/constants';
 import { toInputDate } from '../lib/format';
 import type { Prospecto } from '../lib/types';
@@ -141,9 +142,13 @@ export function renderCrmForm(container: HTMLElement, prospectoId?: string): (()
 
     try {
       if (isEdit && prospectoId) {
-        await updateDoc(doc(db, 'prospectos', prospectoId), payload);
+        await updateDoc(doc(db, 'prospectos', prospectoId), {
+          ...payload,
+          updatedBy: auth.currentUser?.email || '',
+        });
+        logAudit('update', 'prospectos', prospectoId, payload.local);
       } else {
-        await addDoc(collection(db, 'prospectos'), {
+        const ref = await addDoc(collection(db, 'prospectos'), {
           ...payload,
           resultado: 'pendiente',
           fechaVisita: null,
@@ -151,6 +156,7 @@ export function renderCrmForm(container: HTMLElement, prospectoId?: string): (()
           createdAt: Timestamp.now(),
           createdBy: auth.currentUser?.uid || '',
         });
+        logAudit('create', 'prospectos', ref.id, payload.local);
       }
       showToast('Prospecto guardado', 'success');
       window.location.hash = '#crm';

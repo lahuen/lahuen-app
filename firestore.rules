@@ -4,14 +4,18 @@ service cloud.firestore {
 
     function isTeamMember() {
       return request.auth != null &&
-             request.auth.token.email in [
-               'cbd.preparados@gmail.com',
-               'gmedina86@gmail.com',
-               'fefox911@gmail.com',
-               'lahuencoop@gmail.com',
-               'rodrigocbdthc@gmail.com',
-               'walter.medina.pourcel@gmail.com'
-             ];
+             exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email));
+    }
+
+    function isAdmin() {
+      return request.auth != null &&
+             get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.role == 'admin';
+    }
+
+    // Users can read their own doc (needed for login check); admins can read/write all
+    match /usuarios/{email} {
+      allow read: if request.auth != null && request.auth.token.email == email;
+      allow read, write: if isAdmin();
     }
 
     match /prospectos/{docId} {
@@ -35,6 +39,14 @@ service cloud.firestore {
       allow create: if isTeamMember()
                     && request.resource.data.createdBy == request.auth.uid;
       // Immutable audit trail
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /audit_log/{docId} {
+      allow read: if isAdmin();
+      allow create: if isTeamMember()
+                    && request.resource.data.userId == request.auth.uid;
       allow update: if false;
       allow delete: if false;
     }

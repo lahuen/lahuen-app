@@ -1,7 +1,8 @@
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
+import { logAudit } from '../lib/audit';
 import { RESULTADOS } from '../lib/constants';
 import { toInputDate, todayStr } from '../lib/format';
 import type { Prospecto } from '../lib/types';
@@ -70,7 +71,9 @@ export function openEstadoModal(prospectoId: string, data: Prospecto): void {
         fechaVisita: visita ? Timestamp.fromDate(new Date(visita + 'T00:00:00')) : null,
         notas,
         updatedAt: Timestamp.now(),
+        updatedBy: auth.currentUser?.email || '',
       });
+      logAudit('update', 'prospectos', prospectoId, data.local, `resultado: ${resultado}`);
       showToast('Estado actualizado', 'success');
     } catch {
       showToast('Error al guardar', 'error');
