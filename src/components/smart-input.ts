@@ -1,10 +1,187 @@
-// Placeholder — implemented in Fase 5
+import { collection, getDocs } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { esc } from '../lib/sanitize';
+import { showToast } from '../lib/toast';
+import { parseSmartInput, type SmartAction } from '../lib/gemini';
+import { findBestProspectMatch } from '../lib/fuzzy-match';
+import { recordStockEntry, recordSale } from '../lib/stock';
+import { addDoc, Timestamp } from 'firebase/firestore';
+import type { Producto } from '../lib/types';
+
+let pendingInput = '';
+
 export function renderSmartInput(container: HTMLElement): (() => void) | null {
   container.innerHTML = `
     <div class="smart-input-bar">
-      <input type="text" class="smart-input" placeholder="Decime que queres hacer..." disabled />
-      <button class="btn btn-primary btn-sm" disabled>Enviar</button>
+      <input type="text" class="smart-input" id="smart-input" placeholder="Decime que queres hacer..." value="${esc(pendingInput)}" />
+      <button class="btn btn-primary btn-sm" id="smart-send">Enviar</button>
     </div>
+    <div class="smart-hint" id="smart-hint" style="display:none;"></div>
+    <div id="smart-confirm" style="display:none;"></div>
   `;
+
+  const input = document.getElementById('smart-input') as HTMLInputElement;
+  const sendBtn = document.getElementById('smart-send') as HTMLButtonElement;
+  const hintEl = document.getElementById('smart-hint')!;
+  const confirmEl = document.getElementById('smart-confirm')!;
+
+  input.addEventListener('input', () => { pendingInput = input.value; });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSend(); }
+  });
+
+  sendBtn.addEventListener('click', handleSend);
+
+  async function handleSend() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    sendBtn.disabled = true;
+    hintEl.style.display = '';
+    hintEl.textContent = 'Procesando...';
+    confirmEl.style.display = 'none';
+
+    try {
+      const result = await parseSmartInput(text);
+      await handleAction(result, text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error procesando';
+      hintEl.textContent = msg;
+      hintEl.style.display = '';
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  async function handleAction(result: SmartAction, originalText: string) {
+    if (result.action === 'error') {
+      hintEl.textContent = result.message;
+      return;
+    }
+
+    if (result.action === 'stock_entrada') {
+      const producto = await findProducto(result.producto);
+      if (!producto) {
+        hintEl.textContent = `Producto "${result.producto}" no encontrado. Crealo primero en Stock.`;
+        return;
+      }
+      showConfirmation(
+        `Entrada: ${result.cantidad} ${result.unidad} de ${producto.nombre} (${result.motivo})`,
+        async () => {
+          await recordStockEntry(producto.id!, producto.nombre, result.cantidad, result.motivo as 'cosecha' | 'compra' | 'devolucion' | 'ajuste');
+          showToast('Entrada registrada', 'success');
+          clearInput();
+        },
+      );
+      return;
+    }
+
+    if (result.action === 'venta') {
+      const producto = await findProducto(result.producto);
+      if (!producto) {
+        hintEl.textContent = `Producto "${result.producto}" no encontrado.`;
+        return;
+      }
+
+      // Fuzzy match prospect
+      let prospectoId: string | undefined;
+      let prospectoLocal: string | undefined;
+
+      if (result.prospecto) {
+        const prospects = await getProspects();
+        const match = findBestProspectMatch(result.prospecto, prospects);
+        if (match) {
+          prospectoId = match.id;
+          prospectoLocal = match.local;
+        }
+      }
+
+      const prospectoLabel = prospectoLocal
+        ? `Vincular con: ${prospectoLocal}`
+        : (result.prospecto ? `No se encontro "${result.prospecto}"` : 'Sin prospecto');
+
+      showConfirmation(
+        `Venta: ${result.cantidad} ${result.unidad} de ${producto.nombre}. ${prospectoLabel}`,
+        async () => {
+          await recordSale(producto.id!, producto.nombre, result.cantidad, prospectoId, prospectoLocal, result.precio ?? undefined);
+          showToast('Venta registrada', 'success');
+          clearInput();
+        },
+      );
+      return;
+    }
+
+    if (result.action === 'nuevo_prospecto') {
+      // Pre-fill and navigate to form
+      // Store in sessionStorage so crm-form can pick it up
+      sessionStorage.setItem('prefill_prospecto', JSON.stringify({
+        local: result.local,
+        contacto: result.contacto,
+        whatsapp: result.whatsapp,
+        perfil: result.perfil,
+        zona: result.zona,
+      }));
+      hintEl.textContent = `Nuevo prospecto: ${result.local || 'sin nombre'}. Redirigiendo al formulario...`;
+      setTimeout(() => { window.location.hash = '#nuevo'; clearInput(); }, 800);
+    }
+  }
+
+  function showConfirmation(message: string, onConfirm: () => Promise<void>) {
+    hintEl.textContent = message;
+    confirmEl.style.display = '';
+    confirmEl.innerHTML = `
+      <div class="smart-input-bar" style="top:auto;border-top:1px solid var(--color-border);border-bottom:none;gap:var(--sp-2);justify-content:flex-end;">
+        <button class="btn btn-secondary btn-sm" id="smart-cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="smart-ok">Confirmar</button>
+      </div>
+    `;
+
+    document.getElementById('smart-cancel')!.addEventListener('click', () => {
+      confirmEl.style.display = 'none';
+      hintEl.style.display = 'none';
+    });
+
+    document.getElementById('smart-ok')!.addEventListener('click', async () => {
+      confirmEl.style.display = 'none';
+      hintEl.textContent = 'Guardando...';
+      try {
+        await onConfirm();
+        hintEl.style.display = 'none';
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Error';
+        hintEl.textContent = msg;
+        showToast(msg, 'error');
+      }
+    });
+  }
+
+  function clearInput() {
+    input.value = '';
+    pendingInput = '';
+    hintEl.style.display = 'none';
+    confirmEl.style.display = 'none';
+  }
+
+  async function findProducto(nombre: string): Promise<(Producto & { id: string }) | null> {
+    const snap = await getDocs(collection(db, 'productos'));
+    const lower = nombre.toLowerCase();
+    for (const d of snap.docs) {
+      const data = d.data() as Producto;
+      if (data.nombre.toLowerCase().includes(lower) || lower.includes(data.nombre.toLowerCase())) {
+        return { id: d.id, ...data };
+      }
+    }
+    return null;
+  }
+
+  async function getProspects(): Promise<{ id: string; local: string; contacto: string }[]> {
+    const snap = await getDocs(collection(db, 'prospectos'));
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, local: data.local || '', contacto: data.contacto || '' };
+    });
+  }
+
   return null;
 }
