@@ -1,6 +1,6 @@
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Prospecto, Producto } from './types';
+import type { Prospecto, Producto, Lote } from './types';
 
 const NOTIF_KEY = 'lahuen_notif_last';
 
@@ -23,18 +23,19 @@ export async function checkAndNotify(): Promise<void> {
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   tomorrow.setHours(23, 59, 59, 999);
 
-  const [productoSnap, prospectoSnap] = await Promise.all([
+  const [productoSnap, prospectoSnap, lotesSnap] = await Promise.all([
     getDocs(collection(db, 'productos')),
     getDocs(collection(db, 'prospectos')),
+    getDocs(collection(db, 'lotes')),
   ]);
 
-  // Stock expiring within 24h
-  productoSnap.docs.forEach(d => {
-    const p = d.data() as Producto;
-    if (p.vencimiento && p.cantidad > 0) {
-      const vDate = p.vencimiento.toDate();
+  // Stock expiring within 24h — check from lotes
+  lotesSnap.docs.forEach(d => {
+    const l = d.data() as Lote;
+    if (l.vencimiento && l.cantidad > 0) {
+      const vDate = l.vencimiento.toDate();
       if (vDate <= tomorrow && vDate >= now) {
-        alerts.push(`${p.nombre}: ${p.cantidad} ${p.unidad} vence mañana`);
+        alerts.push(`${l.productoNombre} (lote ${l.numero}): ${l.cantidad} uds vence mañana`);
       }
     }
   });

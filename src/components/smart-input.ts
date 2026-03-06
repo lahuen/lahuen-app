@@ -75,6 +75,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
         `Entrada: ${result.cantidad} ${result.unidad} de ${producto.nombre} (${result.motivo})`,
         async () => {
           await recordStockEntry(producto.id!, producto.nombre, result.cantidad, result.motivo as 'cosecha' | 'compra' | 'devolucion' | 'ajuste');
+          // Lote is auto-generated when no loteInfo is passed
           showToast('Entrada registrada', 'success');
           clearInput();
         },

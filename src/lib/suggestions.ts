@@ -2,7 +2,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { geminiModel } from './gemini';
 import { isOverdue, formatDate } from './format';
-import type { Prospecto, Producto } from './types';
+import type { Prospecto, Producto, Lote } from './types';
 
 export interface Suggestion {
   icon: 'expiry' | 'followup' | 'lowstock' | 'opportunity';
@@ -45,9 +45,10 @@ interface ContextResult {
 }
 
 async function gatherContext(): Promise<ContextResult> {
-  const [productoSnap, prospectoSnap] = await Promise.all([
+  const [productoSnap, prospectoSnap, lotesSnap] = await Promise.all([
     getDocs(collection(db, 'productos')),
     getDocs(collection(db, 'prospectos')),
+    getDocs(collection(db, 'lotes')),
   ]);
 
   const now = new Date();
@@ -59,15 +60,20 @@ async function gatherContext(): Promise<ContextResult> {
   const lowStock: string[] = [];
   const outOfStock: string[] = [];
 
-  productoSnap.docs.forEach(d => {
-    const p = d.data() as Producto;
-    if (p.vencimiento) {
-      const vDate = p.vencimiento.toDate();
+  // Check expiring from lotes (cantidad > 0)
+  lotesSnap.docs.forEach(d => {
+    const l = d.data() as Lote;
+    if (l.cantidad > 0 && l.vencimiento) {
+      const vDate = l.vencimiento.toDate();
       if (vDate <= weekFromNow) {
         const days = Math.ceil((vDate.getTime() - now.getTime()) / 86400000);
-        expiring.push(`- ${p.nombre}: ${p.cantidad} ${p.unidad}, vence en ${days <= 0 ? 'VENCIDO' : days + ' dias'} (${formatDate(p.vencimiento)})`);
+        expiring.push(`- ${l.productoNombre} (lote ${l.numero}): ${l.cantidad} uds, vence en ${days <= 0 ? 'VENCIDO' : days + ' dias'}`);
       }
     }
+  });
+
+  productoSnap.docs.forEach(d => {
+    const p = d.data() as Producto;
     if (p.cantidad === 0) {
       outOfStock.push(`- ${p.nombre}: sin stock`);
     } else if (p.cantidad > 0 && p.cantidad < 20) {

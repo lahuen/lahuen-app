@@ -22,10 +22,21 @@ service cloud.firestore {
       );
     }
 
-    function isAdmin() {
+    // Temporary legacy fallback for admin until usuarios collection is seeded
+    function isAdminLegacy() {
       return request.auth != null &&
-             exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email)) &&
-             get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.role == 'admin';
+             request.auth.token.email in [
+               'cbd.preparados@gmail.com',
+               'walter.medina.pourcel@gmail.com'
+             ];
+    }
+
+    function isAdmin() {
+      return request.auth != null && (
+        (exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email)) &&
+         get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.role == 'admin')
+        || isAdminLegacy()
+      );
     }
 
     // Anyone authenticated can read their own user doc (needed for login check)
@@ -56,6 +67,14 @@ service cloud.firestore {
                     && request.resource.data.createdBy == request.auth.uid;
       // Immutable audit trail
       allow update: if false;
+      allow delete: if false;
+    }
+
+    match /lotes/{docId} {
+      allow read: if isTeamMember();
+      allow create: if isTeamMember()
+                    && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTeamMember();
       allow delete: if false;
     }
 

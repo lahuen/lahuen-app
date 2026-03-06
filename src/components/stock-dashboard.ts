@@ -4,11 +4,12 @@ import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
-import { recordStockEntry, recordStockExit } from '../lib/stock';
-import type { Producto } from '../lib/types';
+import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
+import type { Producto, Lote } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
   let allProducts: (Producto & { id: string })[] = [];
+  let allLotes: (Lote & { id: string })[] = [];
 
   container.innerHTML = `
     <div class="page">
@@ -62,16 +63,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
               <label class="form-label">Imagen (URL)</label>
               <input type="url" name="imagen" class="form-control" placeholder="https://... (opcional)" />
             </div>
-            <div class="grid-2">
-              <div class="form-group">
-                <label class="form-label">Lote</label>
-                <input type="text" name="lote" class="form-control" placeholder="Opcional" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Vencimiento</label>
-                <input type="date" name="vencimiento" class="form-control" />
-              </div>
-            </div>
             <div style="display:flex;gap:var(--sp-3);">
               <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
               <button type="button" class="btn btn-secondary btn-sm" id="cancel-product">Cancelar</button>
@@ -96,12 +87,11 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   const stockSearch = document.getElementById('stock-search') as HTMLInputElement;
   stockSearch.addEventListener('input', renderGrid);
 
-  // Product form submit
+  // Product form submit (no lote/vencimiento — those are per-entry now)
   const productForm = document.getElementById('product-form') as HTMLFormElement;
   productForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const vencStr = (productForm.vencimiento as HTMLInputElement).value;
       const nombreValue = (productForm.nombre as HTMLInputElement).value.trim();
       const ref = await addDoc(collection(db, 'productos'), {
         nombre: nombreValue,
@@ -109,9 +99,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         unidad: (productForm.unidad as HTMLSelectElement).value,
         precio: Number((productForm.precio as HTMLInputElement).value) || 0,
         proveedor: (productForm.proveedor as HTMLInputElement).value.trim(),
-        lote: (productForm.lote as HTMLInputElement).value.trim(),
+        lote: '',
         imagen: (productForm.imagen as HTMLInputElement).value.trim(),
-        vencimiento: vencStr ? Timestamp.fromDate(new Date(vencStr + 'T00:00:00')) : null,
+        vencimiento: null,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
         createdBy: auth.currentUser?.uid || '',
@@ -126,24 +116,44 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   });
 
   // Listen to productos
-  const q = query(collection(db, 'productos'), orderBy('nombre'));
-  const unsub = onSnapshot(q, (snap) => {
+  const qProd = query(collection(db, 'productos'), orderBy('nombre'));
+  const unsubProd = onSnapshot(qProd, (snap) => {
     allProducts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Producto & { id: string }));
     renderGrid();
     updateKpis();
   });
+
+  // Listen to lotes
+  const qLotes = query(collection(db, 'lotes'));
+  const unsubLotes = onSnapshot(qLotes, (snap) => {
+    allLotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
+    renderGrid();
+    updateKpis();
+  });
+
+  function lotesForProduct(productoId: string): (Lote & { id: string })[] {
+    return allLotes
+      .filter(l => l.productoId === productoId && l.cantidad > 0)
+      .sort((a, b) => {
+        if (!a.vencimiento && !b.vencimiento) return 0;
+        if (!a.vencimiento) return 1;
+        if (!b.vencimiento) return -1;
+        return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
+      });
+  }
 
   function updateKpis() {
     const total = allProducts.length;
     const value = allProducts.reduce((sum, p) => sum + (p.cantidad * p.precio), 0);
     const low = allProducts.filter(p => p.cantidad > 0 && p.cantidad < 20).length;
     const zero = allProducts.filter(p => p.cantidad === 0).length;
+
+    // Count expiring from lotes (cantidad > 0, vencimiento <= 7 days)
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 86400000);
-    const expiring = allProducts.filter(p => {
-      if (!p.vencimiento) return false;
-      const d = p.vencimiento.toDate();
-      return d <= weekFromNow;
+    const expiring = allLotes.filter(l => {
+      if (l.cantidad <= 0 || !l.vencimiento) return false;
+      return l.vencimiento.toDate() <= weekFromNow;
     }).length;
 
     document.getElementById('stock-total')!.textContent = String(total);
@@ -170,29 +180,52 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       return;
     }
 
+    const now = new Date();
+    const weekFromNow = new Date(now.getTime() + 7 * 86400000);
+
     grid.innerHTML = filtered.map(p => {
       const isLow = p.cantidad > 0 && p.cantidad < 20;
       const isZero = p.cantidad === 0;
-      const isExpired = p.vencimiento && p.vencimiento.toDate() <= new Date();
-      const cls = isExpired ? 'expired' : (isLow || isZero ? 'low-stock' : '');
+      const pLotes = lotesForProduct(p.id);
+      const hasExpiring = pLotes.some(l => l.vencimiento && l.vencimiento.toDate() <= weekFromNow);
+      const cls = hasExpiring ? 'expired' : (isLow || isZero ? 'low-stock' : '');
 
       const imgHtml = p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" class="stock-card-img" />` : '';
+
+      // Lotes section
+      let lotesHtml = '';
+      if (pLotes.length > 0) {
+        const loteItems = pLotes.map(l => {
+          const isExp = l.vencimiento && l.vencimiento.toDate() <= weekFromNow;
+          return `<div class="lote-item ${isExp ? 'lote-expiring' : ''}">
+            <span class="lote-numero">${esc(l.numero)}</span>
+            <span class="lote-qty">${l.cantidad} uds</span>
+            ${l.vencimiento ? `<span class="lote-venc">${formatDate(l.vencimiento)}</span>` : ''}
+            ${l.ubicacion ? `<span class="lote-ubic">${esc(l.ubicacion)}</span>` : ''}
+          </div>`;
+        }).join('');
+
+        lotesHtml = `
+          <button class="lote-toggle" data-lote-toggle="${p.id}">Lotes (${pLotes.length})</button>
+          <div class="lote-list" id="lotes-${p.id}" style="display:none;">${loteItems}</div>
+        `;
+      }
 
       return `<div class="stock-card ${cls}" data-id="${p.id}">
         ${imgHtml}
         <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--sp-3);">
           <div>
             <strong>${esc(p.nombre)}</strong>
-            <div class="text-secondary text-xs">${esc(p.proveedor || '')}${p.lote ? ' / Lote: ' + esc(p.lote) : ''}</div>
+            <div class="text-secondary text-xs">${esc(p.proveedor || '')}</div>
           </div>
           <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'}">${p.cantidad} ${esc(p.unidad)}</span>
         </div>
         <div class="text-xs text-secondary" style="margin-bottom:var(--sp-3);">
           ${p.precio ? formatCurrency(p.precio) + ' / ' + esc(p.unidad) : ''}
-          ${p.vencimiento ? ' &middot; Vence: ' + formatDate(p.vencimiento) : ''}
           ${p.updatedBy ? `<br>Editado por ${esc(p.updatedBy.split('@')[0])}` : ''}
         </div>
-        <div style="display:flex;gap:var(--sp-2);">
+        ${lotesHtml}
+        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
           <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>
           <button class="btn btn-sm btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">- Salida</button>
         </div>
@@ -200,11 +233,28 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       </div>`;
     }).join('');
 
-    grid.addEventListener('click', handleStockAction);
+    // Event delegation
+    grid.addEventListener('click', handleGridClick);
   }
 
-  function handleStockAction(e: Event) {
-    const btn = (e.target as HTMLElement).closest('[data-stock-action]') as HTMLElement | null;
+  function handleGridClick(e: Event) {
+    const target = e.target as HTMLElement;
+
+    // Lote toggle
+    const toggleBtn = target.closest('[data-lote-toggle]') as HTMLElement | null;
+    if (toggleBtn) {
+      const prodId = toggleBtn.dataset.loteToggle!;
+      const list = document.getElementById(`lotes-${prodId}`);
+      if (list) {
+        const isHidden = list.style.display === 'none';
+        list.style.display = isHidden ? '' : 'none';
+        toggleBtn.classList.toggle('open', isHidden);
+      }
+      return;
+    }
+
+    // Stock action
+    const btn = target.closest('[data-stock-action]') as HTMLElement | null;
     if (!btn) return;
     const action = btn.dataset.stockAction as 'entrada' | 'salida';
     const id = btn.dataset.id!;
@@ -220,20 +270,61 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     });
 
     const container = document.getElementById(`stock-inline-${productoId}`)!;
-    const motivos = tipo === 'entrada'
-      ? '<option value="cosecha">Cosecha</option><option value="compra">Compra</option><option value="devolucion">Devolucion</option><option value="ajuste">Ajuste</option>'
-      : '<option value="venta">Venta</option><option value="merma">Merma</option><option value="ajuste">Ajuste</option>';
 
-    container.innerHTML = `
-      <div class="grid-2" style="gap:var(--sp-2);">
-        <input type="number" id="inline-qty-${productoId}" class="form-control" min="1" placeholder="Cantidad" style="padding:8px;" />
-        <select id="inline-motivo-${productoId}" class="form-control" style="padding:8px;">${motivos}</select>
-      </div>
-      <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
-        <button class="btn btn-sm btn-primary" id="inline-confirm-${productoId}">Confirmar</button>
-        <button class="btn btn-sm btn-secondary" id="inline-cancel-${productoId}">Cancelar</button>
-      </div>
-    `;
+    if (tipo === 'entrada') {
+      const motivos = '<option value="cosecha">Cosecha</option><option value="compra">Compra</option><option value="devolucion">Devolucion</option><option value="ajuste">Ajuste</option>';
+      container.innerHTML = `
+        <div class="grid-2" style="gap:var(--sp-2);">
+          <input type="number" id="inline-qty-${productoId}" class="form-control" min="1" placeholder="Cantidad" style="padding:8px;" />
+          <select id="inline-motivo-${productoId}" class="form-control" style="padding:8px;">${motivos}</select>
+        </div>
+        <div class="grid-2" style="gap:var(--sp-2);margin-top:var(--sp-2);">
+          <input type="text" id="inline-lote-${productoId}" class="form-control" placeholder="Nro lote (ej: L001)" style="padding:8px;" />
+          <input type="date" id="inline-venc-${productoId}" class="form-control" style="padding:8px;" title="Vencimiento" />
+        </div>
+        <div style="margin-top:var(--sp-2);">
+          <input type="text" id="inline-ubic-${productoId}" class="form-control" placeholder="Ubicacion (opcional)" style="padding:8px;" />
+        </div>
+        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
+          <button class="btn btn-sm btn-primary" id="inline-confirm-${productoId}">Confirmar</button>
+          <button class="btn btn-sm btn-secondary" id="inline-cancel-${productoId}">Cancelar</button>
+        </div>
+      `;
+    } else {
+      // Salida: show lote selector
+      const pLotes = lotesForProduct(productoId);
+      const motivos = '<option value="venta">Venta</option><option value="merma">Merma</option><option value="ajuste">Ajuste</option>';
+
+      let loteSelect = '';
+      if (pLotes.length > 0) {
+        const opts = pLotes.map(l => {
+          const vencLabel = l.vencimiento ? ` - Vence: ${formatDate(l.vencimiento)}` : '';
+          const ubicLabel = l.ubicacion ? ` (${l.ubicacion})` : '';
+          return `<option value="${l.id}">${esc(l.numero)}: ${l.cantidad} uds${vencLabel}${ubicLabel}</option>`;
+        }).join('');
+        loteSelect = `
+          <div style="margin-top:var(--sp-2);">
+            <select id="inline-lote-sel-${productoId}" class="form-control" style="padding:8px;">
+              <option value="">FEFO automatico</option>
+              ${opts}
+            </select>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="grid-2" style="gap:var(--sp-2);">
+          <input type="number" id="inline-qty-${productoId}" class="form-control" min="1" placeholder="Cantidad" style="padding:8px;" />
+          <select id="inline-motivo-${productoId}" class="form-control" style="padding:8px;">${motivos}</select>
+        </div>
+        ${loteSelect}
+        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
+          <button class="btn btn-sm btn-primary" id="inline-confirm-${productoId}">Confirmar</button>
+          <button class="btn btn-sm btn-secondary" id="inline-cancel-${productoId}">Cancelar</button>
+        </div>
+      `;
+    }
+
     container.style.display = '';
 
     document.getElementById(`inline-cancel-${productoId}`)!.addEventListener('click', () => {
@@ -260,9 +351,31 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
       try {
         if (tipo === 'entrada') {
-          await recordStockEntry(productoId, productoNombre, qty, motivo as 'cosecha' | 'compra' | 'devolucion' | 'ajuste');
+          const loteNumero = (document.getElementById(`inline-lote-${productoId}`) as HTMLInputElement).value.trim();
+          const vencStr = (document.getElementById(`inline-venc-${productoId}`) as HTMLInputElement).value;
+          const ubicacion = (document.getElementById(`inline-ubic-${productoId}`) as HTMLInputElement).value.trim();
+
+          const loteInfo = {
+            numero: loteNumero || undefined!,
+            vencimiento: vencStr ? new Date(vencStr + 'T00:00:00') : null,
+            ubicacion: ubicacion || '',
+          };
+          // Only pass loteInfo if user provided at least a lote number or vencimiento
+          const hasLoteInfo = loteNumero || vencStr;
+          await recordStockEntry(
+            productoId, productoNombre, qty,
+            motivo as 'cosecha' | 'compra' | 'devolucion' | 'ajuste',
+            hasLoteInfo ? loteInfo : undefined,
+          );
         } else {
-          await recordStockExit(productoId, productoNombre, qty, motivo as 'merma' | 'ajuste');
+          const loteSelEl = document.getElementById(`inline-lote-sel-${productoId}`) as HTMLSelectElement | null;
+          const selectedLoteId = loteSelEl?.value || undefined;
+
+          if (motivo === 'venta') {
+            await recordSale(productoId, productoNombre, qty, undefined, undefined, undefined, selectedLoteId);
+          } else {
+            await recordStockExit(productoId, productoNombre, qty, motivo as 'merma' | 'ajuste', selectedLoteId);
+          }
         }
         showToast(`${tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada`, 'success');
         container.style.display = 'none';
@@ -274,5 +387,5 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     });
   }
 
-  return () => unsub();
+  return () => { unsubProd(); unsubLotes(); };
 }

@@ -2,12 +2,13 @@ import { collection, onSnapshot, query, orderBy, where, limit, getDocs } from 'f
 import { db } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { buildEvents, groupByDate, type AgendaEvent, type AgendaGroup } from '../lib/agenda-data';
-import type { Prospecto, Producto, Movimiento } from '../lib/types';
+import type { Prospecto, Producto, Movimiento, Lote } from '../lib/types';
 
 export function renderAgendaDashboard(container: HTMLElement): (() => void) | null {
   let prospectos: (Prospecto & { id: string })[] = [];
   let productos: (Producto & { id: string })[] = [];
   let movimientos: (Movimiento & { id: string })[] = [];
+  let lotes: (Lote & { id: string })[] = [];
   let filterType = '';
 
   container.innerHTML = `
@@ -50,8 +51,13 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
     rebuild();
   });
 
+  const unsubL = onSnapshot(query(collection(db, 'lotes')), snap => {
+    lotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
+    rebuild();
+  });
+
   function rebuild() {
-    let events = buildEvents(prospectos, productos, movimientos);
+    let events = buildEvents(prospectos, productos, movimientos, lotes);
     if (filterType) events = events.filter(e => e.type === filterType);
 
     const groups = groupByDate(events);
@@ -100,5 +106,5 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
     `;
   }
 
-  return () => { unsubP(); unsubS(); };
+  return () => { unsubP(); unsubS(); unsubL(); };
 }

@@ -1,17 +1,56 @@
-import { runTransaction, doc, collection, Timestamp } from 'firebase/firestore';
+import { runTransaction, doc, collection, Timestamp, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { logAudit } from './audit';
 
+export interface LoteInfo {
+  numero: string;
+  vencimiento: Date | null;
+  ubicacion: string;
+}
+
+function autoLoteNumero(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `L-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+/**
+ * Find the best lote for FEFO exit (earliest vencimiento with cantidad > 0).
+ * Returns loteId or null if no lotes exist.
+ */
+async function findFefoLote(productoId: string): Promise<string | null> {
+  const lotesSnap = await getDocs(
+    query(collection(db, 'lotes'), where('productoId', '==', productoId), where('cantidad', '>', 0)),
+  );
+  if (lotesSnap.empty) return null;
+
+  let best: { id: string; venc: Date | null } | null = null;
+  for (const d of lotesSnap.docs) {
+    const data = d.data();
+    const venc = data.vencimiento ? data.vencimiento.toDate() : null;
+    if (!best) {
+      best = { id: d.id, venc };
+    } else if (venc && (!best.venc || venc < best.venc)) {
+      best = { id: d.id, venc };
+    }
+  }
+  return best?.id || null;
+}
+
 /**
  * Record a stock entry (cosecha, compra, devolucion).
- * Increments producto.cantidad and creates a movimiento.
+ * Creates a lote doc and increments producto.cantidad.
  */
 export async function recordStockEntry(
   productoId: string,
   productoNombre: string,
   cantidad: number,
   motivo: 'cosecha' | 'compra' | 'devolucion' | 'ajuste',
+  loteInfo?: LoteInfo,
 ): Promise<void> {
+  const info = loteInfo || { numero: autoLoteNumero(), vencimiento: null, ubicacion: '' };
+  let loteId = '';
+
   await runTransaction(db, async (tx) => {
     const prodRef = doc(db, 'productos', productoId);
     const snap = await tx.get(prodRef);
@@ -22,6 +61,20 @@ export async function recordStockEntry(
       cantidad: current + cantidad,
       updatedAt: Timestamp.now(),
       updatedBy: auth.currentUser?.email || '',
+    });
+
+    const loteRef = doc(collection(db, 'lotes'));
+    loteId = loteRef.id;
+    tx.set(loteRef, {
+      productoId,
+      productoNombre,
+      numero: info.numero,
+      cantidad,
+      vencimiento: info.vencimiento ? Timestamp.fromDate(info.vencimiento) : null,
+      ubicacion: info.ubicacion,
+      fechaIngreso: Timestamp.now(),
+      createdBy: auth.currentUser?.uid || '',
+      createdAt: Timestamp.now(),
     });
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -35,14 +88,15 @@ export async function recordStockEntry(
       vendedor: auth.currentUser?.email || '',
       createdBy: auth.currentUser?.uid || '',
       createdAt: Timestamp.now(),
+      loteId,
     });
   });
-  logAudit('update', 'productos', productoId, productoNombre, `entrada: +${cantidad} (${motivo})`);
+  logAudit('update', 'productos', productoId, productoNombre, `entrada: +${cantidad} (${motivo}) lote=${info.numero}`);
 }
 
 /**
  * Record a sale. Decrements stock and creates a movimiento linked to a prospecto.
- * Throws if insufficient stock.
+ * Uses FEFO lote selection if no loteId provided.
  */
 export async function recordSale(
   productoId: string,
@@ -51,7 +105,11 @@ export async function recordSale(
   prospectoId?: string,
   prospectoLocal?: string,
   precioVenta?: number,
+  loteId?: string,
 ): Promise<void> {
+  // FEFO: find best lote if not specified
+  const targetLoteId = loteId || await findFefoLote(productoId);
+
   await runTransaction(db, async (tx) => {
     const prodRef = doc(db, 'productos', productoId);
     const snap = await tx.get(prodRef);
@@ -67,6 +125,16 @@ export async function recordSale(
       updatedAt: Timestamp.now(),
       updatedBy: auth.currentUser?.email || '',
     });
+
+    // Decrement lote cantidad
+    if (targetLoteId) {
+      const loteRef = doc(db, 'lotes', targetLoteId);
+      const loteSnap = await tx.get(loteRef);
+      if (loteSnap.exists()) {
+        const loteCurrent = loteSnap.data().cantidad as number;
+        tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
+      }
+    }
 
     const movRef = doc(collection(db, 'movimientos'));
     tx.set(movRef, {
@@ -79,6 +147,7 @@ export async function recordSale(
       vendedor: auth.currentUser?.email || '',
       createdBy: auth.currentUser?.uid || '',
       createdAt: Timestamp.now(),
+      ...(targetLoteId ? { loteId: targetLoteId } : {}),
       ...(prospectoId ? { prospectoId, prospectoLocal } : {}),
       ...(precioVenta != null ? { precioVenta } : {}),
     });
@@ -88,13 +157,17 @@ export async function recordSale(
 
 /**
  * Record a stock exit (merma, ajuste).
+ * Uses FEFO lote selection if no loteId provided.
  */
 export async function recordStockExit(
   productoId: string,
   productoNombre: string,
   cantidad: number,
   motivo: 'merma' | 'ajuste',
+  loteId?: string,
 ): Promise<void> {
+  const targetLoteId = loteId || await findFefoLote(productoId);
+
   await runTransaction(db, async (tx) => {
     const prodRef = doc(db, 'productos', productoId);
     const snap = await tx.get(prodRef);
@@ -111,6 +184,15 @@ export async function recordStockExit(
       updatedBy: auth.currentUser?.email || '',
     });
 
+    if (targetLoteId) {
+      const loteRef = doc(db, 'lotes', targetLoteId);
+      const loteSnap = await tx.get(loteRef);
+      if (loteSnap.exists()) {
+        const loteCurrent = loteSnap.data().cantidad as number;
+        tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
+      }
+    }
+
     const movRef = doc(collection(db, 'movimientos'));
     tx.set(movRef, {
       tipo: 'salida',
@@ -122,6 +204,7 @@ export async function recordStockExit(
       vendedor: auth.currentUser?.email || '',
       createdBy: auth.currentUser?.uid || '',
       createdAt: Timestamp.now(),
+      ...(targetLoteId ? { loteId: targetLoteId } : {}),
     });
   });
   logAudit('update', 'productos', productoId, productoNombre, `salida: -${cantidad} (${motivo})`);

@@ -52,6 +52,19 @@ export interface Usuario {
   role: 'admin' | 'miembro';
 }
 
+export interface Lote {
+  id?: string;
+  productoId: string;
+  productoNombre: string;
+  numero: string;
+  cantidad: number;
+  vencimiento: Timestamp | null;
+  ubicacion: string;
+  fechaIngreso: Timestamp;
+  createdBy: string;
+  createdAt: Timestamp;
+}
+
 export interface AuditEntry {
   action: 'create' | 'update' | 'delete';
   collection: string;
@@ -74,6 +87,7 @@ export interface Movimiento {
   vendedor: string;
   createdBy: string;
   createdAt: Timestamp;
+  loteId?: string;
   prospectoId?: string;
   prospectoLocal?: string;
   precioVenta?: number;

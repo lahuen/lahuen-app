@@ -665,3 +665,29 @@ tbody tr:hover { background: var(--color-accent-muted); }
 /* ── Audit ─────────────────────────────────────────────────────────────── */
 .audit-cards { display: none; }
 .badge-info { background: rgba(59,130,246,.12); color: #2563eb; }
+
+/* ── Lotes ─────────────────────────────────────────────────────────────── */
+.lote-toggle {
+  background: none; border: none; cursor: pointer;
+  font-size: var(--text-xs); color: var(--color-accent); font-weight: var(--weight-medium);
+  padding: var(--sp-1) 0; display: inline-flex; align-items: center; gap: var(--sp-1);
+}
+.lote-toggle::before {
+  content: '▸'; display: inline-block; transition: transform .15s;
+}
+.lote-toggle.open::before { transform: rotate(90deg); }
+.lote-list {
+  margin-top: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.lote-item {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: var(--text-xs); padding: var(--sp-2); border-radius: 6px;
+  background: var(--color-bg);
+}
+.lote-item.lote-expiring {
+  background: rgba(239,68,68,.08); border-left: 3px solid #ef4444;
+}
+.lote-numero { font-weight: var(--weight-medium); color: var(--color-text); }
+.lote-qty { color: var(--color-secondary); }
+.lote-venc { color: var(--color-secondary); }
+.lote-ubic { color: var(--color-tertiary); font-style: italic; }

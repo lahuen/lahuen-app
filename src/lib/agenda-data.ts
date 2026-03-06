@@ -1,5 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
-import type { Prospecto, Producto, Movimiento } from './types';
+import type { Prospecto, Producto, Movimiento, Lote } from './types';
 import { formatDate } from './format';
 import { getResultadoBadge } from './constants';
 
@@ -28,6 +28,7 @@ export function buildEvents(
   prospectos: (Prospecto & { id: string })[],
   productos: (Producto & { id: string })[],
   movimientos: (Movimiento & { id: string })[],
+  lotes?: (Lote & { id: string })[],
 ): AgendaEvent[] {
   const events: AgendaEvent[] = [];
 
@@ -62,18 +63,36 @@ export function buildEvents(
     }
   }
 
-  for (const p of productos) {
-    if (p.vencimiento) {
-      events.push({
-        id: `ven-${p.id}`,
-        date: p.vencimiento.toDate(),
-        type: 'vencimiento',
-        title: p.nombre,
-        subtitle: `${p.cantidad} ${p.unidad} en stock`,
-        badgeCls: 'badge-danger',
-        badgeLabel: 'Vencimiento',
-        linkHash: '#stock',
-      });
+  // Vencimientos from lotes (preferred) or fallback to productos
+  if (lotes && lotes.length > 0) {
+    for (const l of lotes) {
+      if (l.cantidad > 0 && l.vencimiento) {
+        events.push({
+          id: `ven-${l.id}`,
+          date: l.vencimiento.toDate(),
+          type: 'vencimiento',
+          title: `${l.productoNombre} — Lote ${l.numero}`,
+          subtitle: `${l.cantidad} uds${l.ubicacion ? ' · ' + l.ubicacion : ''}`,
+          badgeCls: 'badge-danger',
+          badgeLabel: 'Vencimiento',
+          linkHash: '#stock',
+        });
+      }
+    }
+  } else {
+    for (const p of productos) {
+      if (p.vencimiento) {
+        events.push({
+          id: `ven-${p.id}`,
+          date: p.vencimiento.toDate(),
+          type: 'vencimiento',
+          title: p.nombre,
+          subtitle: `${p.cantidad} ${p.unidad} en stock`,
+          badgeCls: 'badge-danger',
+          badgeLabel: 'Vencimiento',
+          linkHash: '#stock',
+        });
+      }
     }
   }
 
