@@ -121,15 +121,15 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     allProducts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Producto & { id: string }));
     renderGrid();
     updateKpis();
-  });
+  }, (err) => { console.error('productos listener:', err); });
 
-  // Listen to lotes
+  // Listen to lotes (graceful: if rules not deployed yet, just skip)
   const qLotes = query(collection(db, 'lotes'));
   const unsubLotes = onSnapshot(qLotes, (snap) => {
     allLotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
     renderGrid();
     updateKpis();
-  });
+  }, (err) => { console.warn('lotes listener:', err.message); });
 
   function lotesForProduct(productoId: string): (Lote & { id: string })[] {
     return allLotes

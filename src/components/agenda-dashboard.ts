@@ -54,7 +54,7 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
   const unsubL = onSnapshot(query(collection(db, 'lotes')), snap => {
     lotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
     rebuild();
-  });
+  }, () => { /* lotes not available yet */ });
 
   function rebuild() {
     let events = buildEvents(prospectos, productos, movimientos, lotes);

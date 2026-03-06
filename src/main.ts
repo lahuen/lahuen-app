@@ -9,14 +9,13 @@ const root = document.getElementById('app')!;
 let cleanup: (() => void) | null = null;
 let currentRole: string | null = null;
 let currentNombre: string | null = null;
-let rendering = false;
+let layoutReady = false;
 
 // Show loading immediately while Firebase initializes
 root.innerHTML = `<div class="empty-state" style="min-height:100vh;"><p>Cargando...</p></div>`;
 
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    // Legacy admin fallback until usuarios collection is seeded
     const LEGACY_ADMINS = ['cbd.preparados@gmail.com', 'walter.medina.pourcel@gmail.com'];
     try {
       const u = await getUsuario(user.email || '');
@@ -26,104 +25,118 @@ onAuthStateChanged(auth, async (user) => {
       currentRole = LEGACY_ADMINS.includes(user.email || '') ? 'admin' : null;
       currentNombre = null;
     }
-    // Guard: if auth state changed again while we awaited, bail
     if (!auth.currentUser) return;
-    renderApp();
-    window.addEventListener('hashchange', renderApp);
+
+    if (!layoutReady) {
+      renderLayout();
+      layoutReady = true;
+    }
+    navigateToHash();
+    window.addEventListener('hashchange', navigateToHash);
     import('./lib/notifications').then(({ checkAndNotify }) => checkAndNotify()).catch(() => {});
   } else {
     currentRole = null;
     currentNombre = null;
-    window.removeEventListener('hashchange', renderApp);
+    layoutReady = false;
+    window.removeEventListener('hashchange', navigateToHash);
     if (cleanup) { cleanup(); cleanup = null; }
     renderLogin(root);
   }
 });
 
-function renderApp() {
-  if (rendering) return;
-  rendering = true;
+/** Render the persistent layout (header, nav, containers) — called once */
+function renderLayout() {
+  const displayName = esc(currentNombre || (auth.currentUser?.email || '').split('@')[0]);
 
+  root.innerHTML = `
+    <header class="app-header">
+      <div class="app-brand">
+        <img src="logo.svg" alt="Lahuen" class="nav-logo" />
+        <span>CRM</span>
+      </div>
+      <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <nav class="tab-nav" id="tab-nav">
+        <a class="tab" href="#stock" data-tab="#stock">Stock</a>
+        <a class="tab" href="#movimientos" data-tab="#movimientos">Movimientos</a>
+        <a class="tab" href="#crm" data-tab="#crm">CRM</a>
+        <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
+        <a class="tab" href="#nuevo" data-tab="#nuevo">Nuevo</a>
+        ${currentRole === 'admin' ? `<a class="tab" href="#audit" data-tab="#audit">Audit</a>` : ''}
+      </nav>
+      <div class="nav-user">
+        <span class="text-secondary text-xs">${displayName}</span>
+        <button class="action-btn" id="logout-btn" title="Salir">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+    <div id="smart-input-container"></div>
+    <div id="suggestions-container"></div>
+    <main class="content" id="view">
+      <div class="empty-state"><p>Cargando...</p></div>
+    </main>
+  `;
+
+  document.getElementById('logout-btn')!.addEventListener('click', () => signOut(auth));
+
+  // Hamburger menu
+  const hamburger = document.getElementById('hamburger-btn')!;
+  const header = document.querySelector('.app-header') as HTMLElement;
+
+  hamburger.addEventListener('click', () => {
+    const isOpen = header.classList.toggle('nav-open');
+    hamburger.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  document.querySelectorAll('.tab-nav .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      header.classList.remove('nav-open');
+      hamburger.setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (header.classList.contains('nav-open') && !header.contains(e.target as Node)) {
+      header.classList.remove('nav-open');
+      hamburger.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Smart input bar
+  const smartContainer = document.getElementById('smart-input-container')!;
+  import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer)).catch(() => {});
+
+  // AI suggestions banner (async, non-blocking)
+  const suggestionsContainer = document.getElementById('suggestions-container')!;
+  import('./components/suggestions-banner').then(({ renderSuggestionsBanner }) => renderSuggestionsBanner(suggestionsContainer)).catch(() => {});
+}
+
+/** Navigate: only swap the #view content + update active tab */
+function navigateToHash() {
   try {
     if (cleanup) { cleanup(); cleanup = null; }
 
     const hash = window.location.hash || '#stock';
-    const displayName = esc(currentNombre || (auth.currentUser?.email || '').split('@')[0]);
+    const view = document.getElementById('view');
+    if (!view) return;
 
-    root.innerHTML = `
-      <header class="app-header">
-        <div class="app-brand">
-          <img src="logo.svg" alt="Lahuen" class="nav-logo" />
-          <span>CRM</span>
-        </div>
-        <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu" aria-expanded="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <nav class="tab-nav">
-          <a class="tab ${hash === '#stock' ? 'active' : ''}" href="#stock">Stock</a>
-          <a class="tab ${hash === '#movimientos' ? 'active' : ''}" href="#movimientos">Movimientos</a>
-          <a class="tab ${hash === '#crm' ? 'active' : ''}" href="#crm">CRM</a>
-          <a class="tab ${hash === '#agenda' ? 'active' : ''}" href="#agenda">Agenda</a>
-          <a class="tab ${hash === '#nuevo' ? 'active' : ''}" href="#nuevo">Nuevo</a>
-          ${currentRole === 'admin' ? `<a class="tab ${hash === '#audit' ? 'active' : ''}" href="#audit">Audit</a>` : ''}
-        </nav>
-        <div class="nav-user">
-          <span class="text-secondary text-xs">${displayName}</span>
-          <button class="action-btn" id="logout-btn" title="Salir">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-          </button>
-        </div>
-      </header>
-      <div id="smart-input-container"></div>
-      <div id="suggestions-container"></div>
-      <main class="content" id="view">
-        <div class="empty-state"><p>Cargando...</p></div>
-      </main>
-    `;
+    view.innerHTML = `<div class="empty-state"><p>Cargando...</p></div>`;
 
-    document.getElementById('logout-btn')!.addEventListener('click', () => signOut(auth));
-
-    // Hamburger menu
-    const hamburger = document.getElementById('hamburger-btn')!;
-    const header = document.querySelector('.app-header') as HTMLElement;
-
-    hamburger.addEventListener('click', () => {
-      const isOpen = header.classList.toggle('nav-open');
-      hamburger.setAttribute('aria-expanded', String(isOpen));
+    // Update active tab
+    document.querySelectorAll('#tab-nav .tab').forEach(tab => {
+      const tabHash = (tab as HTMLElement).dataset.tab || '';
+      tab.classList.toggle('active', hash === tabHash || (hash.startsWith('#editar/') && tabHash === '#crm'));
     });
-
-    document.querySelectorAll('.tab-nav .tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        header.classList.remove('nav-open');
-        hamburger.setAttribute('aria-expanded', 'false');
-      });
-    });
-
-    // Close menu on outside click
-    document.addEventListener('click', (e) => {
-      if (header.classList.contains('nav-open') && !header.contains(e.target as Node)) {
-        header.classList.remove('nav-open');
-        hamburger.setAttribute('aria-expanded', 'false');
-      }
-    });
-
-    // Smart input bar
-    const smartContainer = document.getElementById('smart-input-container')!;
-    import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer)).catch(() => {});
-
-    // AI suggestions banner (async, non-blocking)
-    const suggestionsContainer = document.getElementById('suggestions-container')!;
-    import('./components/suggestions-banner').then(({ renderSuggestionsBanner }) => renderSuggestionsBanner(suggestionsContainer)).catch(() => {});
-
-    const view = document.getElementById('view')!;
 
     if (hash.startsWith('#editar/')) {
       const id = hash.split('/')[1];
@@ -151,16 +164,16 @@ function renderApp() {
       }
     }
   } catch (err) {
-    console.error('renderApp error:', err);
-    root.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:24px;text-align:center;">
-        <p style="font-size:17px;font-weight:600;margin-bottom:8px;">Algo salio mal</p>
-        <p style="font-size:13px;color:#6e6e73;margin-bottom:16px;">Pudo ser un problema de conexion o permisos.</p>
-        <button onclick="location.reload()" style="padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:100px;font-size:13px;cursor:pointer;">Recargar</button>
-      </div>
-    `;
-  } finally {
-    rendering = false;
+    console.error('navigateToHash error:', err);
+    const view = document.getElementById('view');
+    if (view) {
+      view.innerHTML = `
+        <div class="empty-state">
+          <p>Error cargando vista</p>
+          <button class="btn btn-primary btn-sm" style="margin-top:var(--sp-3);" onclick="location.reload()">Recargar</button>
+        </div>
+      `;
+    }
   }
 }
 
