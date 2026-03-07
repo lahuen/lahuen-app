@@ -1,14 +1,12 @@
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { getResultadoBadge, getPerfilLabel } from '../lib/constants';
 import { seguimientoLabel, isOverdue } from '../lib/format';
 import { openWhatsApp } from '../lib/whatsapp';
 import { openEstadoModal } from './crm-estado-modal';
+import { getProspectos, subscribe } from '../lib/store';
 import type { Prospecto } from '../lib/types';
 
 export function renderCrmDashboard(container: HTMLElement): (() => void) | null {
-  let allItems: (Prospecto & { id: string })[] = [];
 
   container.innerHTML = `
     <div class="page">
@@ -71,17 +69,18 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
   filterResultado.addEventListener('change', applyFilters);
   filterVendedor.addEventListener('change', applyFilters);
 
-  const q = query(collection(db, 'prospectos'), orderBy('createdAt', 'desc'));
-  const unsub = onSnapshot(q, (snap) => {
-    allItems = snap.docs.map(d => ({ id: d.id, ...d.data() } as Prospecto & { id: string }));
-    populateVendedorFilter();
-    applyFilters();
-  });
+  // Single delegated click listener for all row actions (tbody + cards)
+  container.addEventListener('click', handleRowAction);
+
+  const unsub = subscribe(() => { populateVendedorFilter(); applyFilters(); });
+  // Render immediately from cache
+  populateVendedorFilter();
+  applyFilters();
 
   function populateVendedorFilter() {
     const seen = new Set<string>();
     const vendedores: string[] = [];
-    for (const item of allItems) {
+    for (const item of getProspectos()) {
       if (item.vendedor && !seen.has(item.vendedor)) {
         seen.add(item.vendedor);
         vendedores.push(item.vendedor);
@@ -96,7 +95,7 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
     const res = filterResultado.value;
     const vend = filterVendedor.value;
 
-    const filtered = allItems.filter(i => {
+    const filtered = getProspectos().filter(i => {
       if (!res && i.resultado === 'no_interesado') return false;
       if (q && !i.local.toLowerCase().includes(q) && !i.contacto.toLowerCase().includes(q) &&
           !i.zona.toLowerCase().includes(q) && !(i.notas || '').toLowerCase().includes(q) &&
@@ -112,11 +111,11 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
   }
 
   function updateStats() {
-    const pendiente = allItems.filter(i => i.resultado === 'pendiente').length;
-    const contactado = allItems.filter(i => i.resultado === 'contactado').length;
-    const prueba = allItems.filter(i => i.resultado === 'entrega_prueba').length;
-    const cliente = allItems.filter(i => i.resultado === 'cliente').length;
-    const active = allItems.filter(i => i.resultado !== 'no_interesado').length;
+    const pendiente = getProspectos().filter(i => i.resultado === 'pendiente').length;
+    const contactado = getProspectos().filter(i => i.resultado === 'contactado').length;
+    const prueba = getProspectos().filter(i => i.resultado === 'entrega_prueba').length;
+    const cliente = getProspectos().filter(i => i.resultado === 'cliente').length;
+    const active = getProspectos().filter(i => i.resultado !== 'no_interesado').length;
     const rate = active > 0 ? Math.round((cliente / active) * 100) : 0;
 
     document.getElementById('stat-pendiente')!.textContent = String(pendiente);
@@ -155,9 +154,6 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
         </div></td>
       </tr>`;
     }).join('');
-
-    // Event delegation
-    tbody.addEventListener('click', handleRowAction);
   }
 
   function renderCards(items: (Prospecto & { id: string })[]) {
@@ -188,8 +184,6 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
         </div>
       </div>`;
     }).join('');
-
-    cardsEl.addEventListener('click', handleRowAction);
   }
 
   function handleRowAction(e: Event) {
@@ -197,7 +191,7 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
     if (!btn) return;
     const action = btn.dataset.action;
     const id = btn.dataset.id!;
-    const item = allItems.find(i => i.id === id);
+    const item = getProspectos().find(i => i.id === id);
     if (!item) return;
 
     switch (action) {

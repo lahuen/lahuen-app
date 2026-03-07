@@ -1,7 +1,6 @@
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from './firebase';
 import { geminiModel } from './gemini';
-import { isOverdue, formatDate } from './format';
+import { isOverdue } from './format';
+import { getProductos, getProspectos, getLotes } from './store';
 import type { Prospecto, Producto, Lote } from './types';
 
 export interface Suggestion {
@@ -21,7 +20,7 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 // ── Public API ────────────────────────────────────────────────────────────
 
 export async function getSuggestions(): Promise<Suggestion[]> {
-  const context = await gatherContext();
+  const context = gatherContext();
 
   if (!context.hasEvents) return [];
 
@@ -44,13 +43,7 @@ interface ContextResult {
   prompt: string;
 }
 
-async function gatherContext(): Promise<ContextResult> {
-  const [productoSnap, prospectoSnap, lotesSnap] = await Promise.all([
-    getDocs(collection(db, 'productos')),
-    getDocs(collection(db, 'prospectos')),
-    getDocs(collection(db, 'lotes')),
-  ]);
-
+function gatherContext(): ContextResult {
   const now = new Date();
   const weekFromNow = new Date(now.getTime() + 7 * 86400000);
   const threeDays = new Date(now.getTime() + 3 * 86400000);
@@ -61,8 +54,7 @@ async function gatherContext(): Promise<ContextResult> {
   const outOfStock: string[] = [];
 
   // Check expiring from lotes (cantidad > 0)
-  lotesSnap.docs.forEach(d => {
-    const l = d.data() as Lote;
+  for (const l of getLotes()) {
     if (l.cantidad > 0 && l.vencimiento) {
       const vDate = l.vencimiento.toDate();
       if (vDate <= weekFromNow) {
@@ -70,24 +62,22 @@ async function gatherContext(): Promise<ContextResult> {
         expiring.push(`- ${l.productoNombre} (lote ${l.numero}): ${l.cantidad} uds, vence en ${days <= 0 ? 'VENCIDO' : days + ' dias'}`);
       }
     }
-  });
+  }
 
-  productoSnap.docs.forEach(d => {
-    const p = d.data() as Producto;
+  for (const p of getProductos()) {
     if (p.cantidad === 0) {
       outOfStock.push(`- ${p.nombre}: sin stock`);
     } else if (p.cantidad > 0 && p.cantidad < 20) {
       lowStock.push(`- ${p.nombre}: ${p.cantidad} ${p.unidad} (stock bajo)`);
     }
-  });
+  }
 
   // CRM alerts
   const overdue: string[] = [];
   const upcoming: string[] = [];
 
-  prospectoSnap.docs.forEach(d => {
-    const p = d.data() as Prospecto;
-    if (p.resultado === 'cliente' || p.resultado === 'no_interesado') return;
+  for (const p of getProspectos()) {
+    if (p.resultado === 'cliente' || p.resultado === 'no_interesado') continue;
 
     if (p.fechaSeguimiento) {
       const sDate = p.fechaSeguimiento.toDate();
@@ -99,7 +89,7 @@ async function gatherContext(): Promise<ContextResult> {
         upcoming.push(`- ${p.local}: seguimiento en ${days === 0 ? 'HOY' : days + 'd'}, resultado=${p.resultado}${p.productosInteres ? ', interes=' + p.productosInteres : ''}`);
       }
     }
-  });
+  }
 
   const hasEvents = expiring.length + lowStock.length + outOfStock.length + overdue.length + upcoming.length > 0;
   const dataHash = `${expiring.length}-${lowStock.length}-${outOfStock.length}-${overdue.length}-${upcoming.length}`;

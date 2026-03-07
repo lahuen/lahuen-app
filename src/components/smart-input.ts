@@ -1,12 +1,9 @@
-import { collection, getDocs } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
 import { parseSmartInput, type SmartAction } from '../lib/gemini';
 import { findBestProspectMatch } from '../lib/fuzzy-match';
 import { recordStockEntry, recordSale } from '../lib/stock';
-import { addDoc, Timestamp } from 'firebase/firestore';
-import type { Producto } from '../lib/types';
+import { getProductos, getProspectos } from '../lib/store';
 
 let pendingInput = '';
 
@@ -66,7 +63,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
     }
 
     if (result.action === 'stock_entrada') {
-      const producto = await findProducto(result.producto);
+      const producto = findProducto(result.producto);
       if (!producto) {
         hintEl.textContent = `Producto "${result.producto}" no encontrado. Crealo primero en Stock.`;
         return;
@@ -84,7 +81,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
     }
 
     if (result.action === 'venta') {
-      const producto = await findProducto(result.producto);
+      const producto = findProducto(result.producto);
       if (!producto) {
         hintEl.textContent = `Producto "${result.producto}" no encontrado.`;
         return;
@@ -95,7 +92,7 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
       let prospectoLocal: string | undefined;
 
       if (result.prospecto) {
-        const prospects = await getProspects();
+        const prospects = getProspects();
         const match = findBestProspectMatch(result.prospecto, prospects);
         if (match) {
           prospectoId = match.id;
@@ -169,24 +166,15 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
     confirmEl.style.display = 'none';
   }
 
-  async function findProducto(nombre: string): Promise<(Producto & { id: string }) | null> {
-    const snap = await getDocs(collection(db, 'productos'));
+  function findProducto(nombre: string) {
     const lower = nombre.toLowerCase();
-    for (const d of snap.docs) {
-      const data = d.data() as Producto;
-      if (data.nombre.toLowerCase().includes(lower) || lower.includes(data.nombre.toLowerCase())) {
-        return { id: d.id, ...data };
-      }
-    }
-    return null;
+    return getProductos().find(p =>
+      p.nombre.toLowerCase().includes(lower) || lower.includes(p.nombre.toLowerCase())
+    ) || null;
   }
 
-  async function getProspects(): Promise<{ id: string; local: string; contacto: string }[]> {
-    const snap = await getDocs(collection(db, 'prospectos'));
-    return snap.docs.map(d => {
-      const data = d.data();
-      return { id: d.id, local: data.local || '', contacto: data.contacto || '' };
-    });
+  function getProspects() {
+    return getProspectos().map(p => ({ id: p.id, local: p.local, contacto: p.contacto }));
   }
 
   return null;

@@ -132,7 +132,10 @@ function navigateToHash() {
     const view = document.getElementById('view');
     if (!view) return;
 
-    view.innerHTML = `<div class="empty-state"><p>Cargando...</p></div>`;
+    // Only show loading if store hasn't loaded yet (first paint)
+    if (!view.children.length) {
+      view.innerHTML = `<div class="empty-state"><p>Cargando...</p></div>`;
+    }
 
     // Update active tab
     document.querySelectorAll('#tab-nav .tab').forEach(tab => {

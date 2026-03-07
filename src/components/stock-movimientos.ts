@@ -1,7 +1,6 @@
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { formatDate, formatCurrency } from '../lib/format';
+import { getMovimientos, subscribe } from '../lib/store';
 import type { Movimiento } from '../lib/types';
 
 export function renderStockMovimientos(container: HTMLElement): (() => void) | null {
@@ -42,18 +41,15 @@ export function renderStockMovimientos(container: HTMLElement): (() => void) | n
     </div>
   `;
 
-  let allMovs: (Movimiento & { id: string })[] = [];
   const filterTipo = document.getElementById('mov-filter-tipo') as HTMLSelectElement;
   filterTipo.addEventListener('change', applyFilter);
 
-  const q = query(collection(db, 'movimientos'), orderBy('createdAt', 'desc'), limit(200));
-  const unsub = onSnapshot(q, (snap) => {
-    allMovs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Movimiento & { id: string }));
-    applyFilter();
-  });
+  const unsub = subscribe(applyFilter);
+  applyFilter();
 
   function applyFilter() {
     const tipo = filterTipo.value;
+    const allMovs = getMovimientos();
     const filtered = tipo ? allMovs.filter(m => m.tipo === tipo) : allMovs;
     renderTable(filtered);
     renderCards(filtered);

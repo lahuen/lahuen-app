@@ -1,14 +1,8 @@
-import { collection, onSnapshot, query, orderBy, where, limit, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
-import { buildEvents, groupByDate, type AgendaEvent, type AgendaGroup } from '../lib/agenda-data';
-import type { Prospecto, Producto, Movimiento, Lote } from '../lib/types';
+import { buildEvents, groupByDate, type AgendaEvent } from '../lib/agenda-data';
+import { getProspectos, getProductos, getMovimientos, getLotes, subscribe } from '../lib/store';
 
 export function renderAgendaDashboard(container: HTMLElement): (() => void) | null {
-  let prospectos: (Prospecto & { id: string })[] = [];
-  let productos: (Producto & { id: string })[] = [];
-  let movimientos: (Movimiento & { id: string })[] = [];
-  let lotes: (Lote & { id: string })[] = [];
   let filterType = '';
 
   container.innerHTML = `
@@ -33,31 +27,12 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
   const filterEl = document.getElementById('agenda-filter-type') as HTMLSelectElement;
   filterEl.addEventListener('change', () => { filterType = filterEl.value; rebuild(); });
 
-  // Load movimientos once (not real-time, historical data)
-  getDocs(query(collection(db, 'movimientos'), where('motivo', '==', 'venta'), orderBy('fecha', 'desc'), limit(50)))
-    .then(snap => {
-      movimientos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Movimiento & { id: string }));
-      rebuild();
-    });
-
-  // Real-time listeners for prospectos + productos
-  const unsubP = onSnapshot(query(collection(db, 'prospectos'), orderBy('createdAt', 'desc')), snap => {
-    prospectos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Prospecto & { id: string }));
-    rebuild();
-  });
-
-  const unsubS = onSnapshot(query(collection(db, 'productos'), orderBy('nombre')), snap => {
-    productos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Producto & { id: string }));
-    rebuild();
-  });
-
-  const unsubL = onSnapshot(query(collection(db, 'lotes')), snap => {
-    lotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
-    rebuild();
-  }, () => { /* lotes not available yet */ });
+  const unsub = subscribe(rebuild);
+  rebuild();
 
   function rebuild() {
-    let events = buildEvents(prospectos, productos, movimientos, lotes);
+    const movVentas = getMovimientos().filter(m => m.motivo === 'venta').slice(0, 50);
+    let events = buildEvents(getProspectos(), getProductos(), movVentas, getLotes());
     if (filterType) events = events.filter(e => e.type === filterType);
 
     const groups = groupByDate(events);
@@ -106,5 +81,5 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
     `;
   }
 
-  return () => { unsubP(); unsubS(); unsubL(); };
+  return () => unsub();
 }

@@ -113,6 +113,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }
   });
 
+  // Single delegated click listener for stock grid actions
+  document.getElementById('stock-grid')!.addEventListener('click', handleGridClick);
+
   // Subscribe to global store (no new Firestore listeners — data is cached)
   const unsub = subscribe(refresh);
 
@@ -228,7 +231,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       </div>`;
     }).join('');
 
-    grid.addEventListener('click', handleGridClick);
   }
 
   function handleGridClick(e: Event) {
