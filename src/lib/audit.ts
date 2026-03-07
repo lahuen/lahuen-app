@@ -21,7 +21,7 @@ export async function logAudit(
       timestamp: Timestamp.now(),
       ...(changes ? { changes } : {}),
     });
-  } catch {
-    // Audit failure is non-fatal
+  } catch (err) {
+    console.warn('logAudit failed:', (err as Error).message);
   }
 }

@@ -1,16 +1,14 @@
-import { collection, onSnapshot, query, orderBy, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
+import { getProductos, getLotes, subscribe } from '../lib/store';
 import type { Producto, Lote } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
-  let allProducts: (Producto & { id: string })[] = [];
-  let allLotes: (Lote & { id: string })[] = [];
-
   container.innerHTML = `
     <div class="page">
       <div class="stat-grid" style="margin-bottom:var(--sp-5);">
@@ -85,9 +83,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
   // Search
   const stockSearch = document.getElementById('stock-search') as HTMLInputElement;
-  stockSearch.addEventListener('input', renderGrid);
+  stockSearch.addEventListener('input', refresh);
 
-  // Product form submit (no lote/vencimiento — those are per-entry now)
+  // Product form submit
   const productForm = document.getElementById('product-form') as HTMLFormElement;
   productForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -115,24 +113,19 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }
   });
 
-  // Listen to productos
-  const qProd = query(collection(db, 'productos'), orderBy('nombre'));
-  const unsubProd = onSnapshot(qProd, (snap) => {
-    allProducts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Producto & { id: string }));
-    renderGrid();
-    updateKpis();
-  }, (err) => { console.error('productos listener:', err); });
+  // Subscribe to global store (no new Firestore listeners — data is cached)
+  const unsub = subscribe(refresh);
 
-  // Listen to lotes (graceful: if rules not deployed yet, just skip)
-  const qLotes = query(collection(db, 'lotes'));
-  const unsubLotes = onSnapshot(qLotes, (snap) => {
-    allLotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string }));
+  // Render immediately from cache
+  refresh();
+
+  function refresh() {
     renderGrid();
     updateKpis();
-  }, (err) => { console.warn('lotes listener:', err.message); });
+  }
 
   function lotesForProduct(productoId: string): (Lote & { id: string })[] {
-    return allLotes
+    return getLotes()
       .filter(l => l.productoId === productoId && l.cantidad > 0)
       .sort((a, b) => {
         if (!a.vencimiento && !b.vencimiento) return 0;
@@ -143,12 +136,13 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   }
 
   function updateKpis() {
+    const allProducts = getProductos();
+    const allLotes = getLotes();
     const total = allProducts.length;
     const value = allProducts.reduce((sum, p) => sum + (p.cantidad * p.precio), 0);
     const low = allProducts.filter(p => p.cantidad > 0 && p.cantidad < 20).length;
     const zero = allProducts.filter(p => p.cantidad === 0).length;
 
-    // Count expiring from lotes (cantidad > 0, vencimiento <= 7 days)
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 86400000);
     const expiring = allLotes.filter(l => {
@@ -164,7 +158,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   }
 
   function renderGrid() {
-    const grid = document.getElementById('stock-grid')!;
+    const grid = document.getElementById('stock-grid');
+    if (!grid) return;
+    const allProducts = getProductos();
     const searchQ = (stockSearch?.value || '').toLowerCase();
     const filtered = searchQ
       ? allProducts.filter(p => p.nombre.toLowerCase().includes(searchQ) || (p.proveedor || '').toLowerCase().includes(searchQ))
@@ -192,7 +188,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
       const imgHtml = p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" class="stock-card-img" />` : '';
 
-      // Lotes section
       let lotesHtml = '';
       if (pLotes.length > 0) {
         const loteItems = pLotes.map(l => {
@@ -233,14 +228,12 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       </div>`;
     }).join('');
 
-    // Event delegation
     grid.addEventListener('click', handleGridClick);
   }
 
   function handleGridClick(e: Event) {
     const target = e.target as HTMLElement;
 
-    // Lote toggle
     const toggleBtn = target.closest('[data-lote-toggle]') as HTMLElement | null;
     if (toggleBtn) {
       const prodId = toggleBtn.dataset.loteToggle!;
@@ -253,7 +246,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       return;
     }
 
-    // Stock action
     const btn = target.closest('[data-stock-action]') as HTMLElement | null;
     if (!btn) return;
     const action = btn.dataset.stockAction as 'entrada' | 'salida';
@@ -263,17 +255,16 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   }
 
   function showInlineForm(productoId: string, productoNombre: string, tipo: 'entrada' | 'salida') {
-    // Close any open inline forms
     document.querySelectorAll('[id^="stock-inline-"]').forEach(el => {
       (el as HTMLElement).style.display = 'none';
       (el as HTMLElement).innerHTML = '';
     });
 
-    const container = document.getElementById(`stock-inline-${productoId}`)!;
+    const inlineContainer = document.getElementById(`stock-inline-${productoId}`)!;
 
     if (tipo === 'entrada') {
       const motivos = '<option value="cosecha">Cosecha</option><option value="compra">Compra</option><option value="devolucion">Devolucion</option><option value="ajuste">Ajuste</option>';
-      container.innerHTML = `
+      inlineContainer.innerHTML = `
         <div class="grid-2" style="gap:var(--sp-2);">
           <input type="number" id="inline-qty-${productoId}" class="form-control" min="1" placeholder="Cantidad" style="padding:8px;" />
           <select id="inline-motivo-${productoId}" class="form-control" style="padding:8px;">${motivos}</select>
@@ -291,7 +282,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         </div>
       `;
     } else {
-      // Salida: show lote selector
       const pLotes = lotesForProduct(productoId);
       const motivos = '<option value="venta">Venta</option><option value="merma">Merma</option><option value="ajuste">Ajuste</option>';
 
@@ -312,7 +302,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         `;
       }
 
-      container.innerHTML = `
+      inlineContainer.innerHTML = `
         <div class="grid-2" style="gap:var(--sp-2);">
           <input type="number" id="inline-qty-${productoId}" class="form-control" min="1" placeholder="Cantidad" style="padding:8px;" />
           <select id="inline-motivo-${productoId}" class="form-control" style="padding:8px;">${motivos}</select>
@@ -325,11 +315,11 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       `;
     }
 
-    container.style.display = '';
+    inlineContainer.style.display = '';
 
     document.getElementById(`inline-cancel-${productoId}`)!.addEventListener('click', () => {
-      container.style.display = 'none';
-      container.innerHTML = '';
+      inlineContainer.style.display = 'none';
+      inlineContainer.innerHTML = '';
     });
 
     document.getElementById(`inline-confirm-${productoId}`)!.addEventListener('click', async () => {
@@ -338,7 +328,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
       if (!qty || qty <= 0) { showToast('Ingresa una cantidad valida', 'error'); return; }
 
-      // Confirmation for exits
       if (tipo === 'salida') {
         const confirmEl = document.getElementById(`inline-confirm-${productoId}`) as HTMLButtonElement;
         if (confirmEl.dataset.confirmed !== 'true') {
@@ -360,7 +349,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
             vencimiento: vencStr ? new Date(vencStr + 'T00:00:00') : null,
             ubicacion: ubicacion || '',
           };
-          // Only pass loteInfo if user provided at least a lote number or vencimiento
           const hasLoteInfo = loteNumero || vencStr;
           await recordStockEntry(
             productoId, productoNombre, qty,
@@ -378,8 +366,8 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
           }
         }
         showToast(`${tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada`, 'success');
-        container.style.display = 'none';
-        container.innerHTML = '';
+        inlineContainer.style.display = 'none';
+        inlineContainer.innerHTML = '';
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Error';
         showToast(msg, 'error');
@@ -387,5 +375,5 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     });
   }
 
-  return () => { unsubProd(); unsubLotes(); };
+  return () => unsub();
 }

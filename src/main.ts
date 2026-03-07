@@ -2,6 +2,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { renderLogin } from './components/login';
 import { getUsuario } from './lib/usuarios';
+import { initStore } from './lib/store';
 import { esc } from './lib/sanitize';
 import './style.css';
 
@@ -27,6 +28,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     if (!auth.currentUser) return;
 
+    initStore(); // Start global Firestore listeners (once, persists across navigations)
     if (!layoutReady) {
       renderLayout();
       layoutReady = true;
