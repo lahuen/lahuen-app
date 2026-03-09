@@ -12,7 +12,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   container.innerHTML = `
     <div class="page">
       <div class="stat-grid" style="margin-bottom:var(--sp-4);">
-        <div class="stat-card"><p class="stat-label">Productos</p><p class="stat-value" id="stock-total">--</p></div>
+        <div class="stat-card"><p class="stat-label">Unidades totales</p><p class="stat-value" id="stock-total">--</p></div>
         <div class="stat-card"><p class="stat-label">Valor total</p><p class="stat-value text-accent" id="stock-value">--</p></div>
         <div class="stat-card"><p class="stat-label">Stock bajo</p><p class="stat-value text-warning" id="stock-low">--</p></div>
         <div class="stat-card"><p class="stat-label">Por vencer</p><p class="stat-value text-danger" id="stock-expiring">--</p></div>
@@ -167,7 +167,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   function updateKpis() {
     const allProducts = getProductos();
     const allLotes = getLotes();
-    const total = allProducts.length;
+    const total = allProducts.reduce((sum, p) => sum + p.cantidad, 0);
     const value = allProducts.reduce((sum, p) => sum + (p.cantidad * p.precio), 0);
     const low = allProducts.filter(p => p.cantidad > 0 && p.cantidad < 20).length;
     const zero = allProducts.filter(p => p.cantidad === 0).length;
@@ -179,7 +179,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       return l.vencimiento.toDate() <= weekFromNow;
     }).length;
 
-    document.getElementById('stock-total')!.textContent = String(total);
+    document.getElementById('stock-total')!.textContent = total.toLocaleString('es-AR');
     document.getElementById('stock-value')!.textContent = formatCurrency(value);
     document.getElementById('stock-low')!.textContent = String(low);
     document.getElementById('stock-expiring')!.textContent = String(expiring);
