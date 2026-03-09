@@ -32,7 +32,13 @@ export function renderLogin(container: HTMLElement) {
       try {
         await getDocs(query(collection(db, 'productos'), fbLimit(1)));
         // Legacy authorized — Firestore rules allowed the read
-      } catch {
+      } catch (probeErr: unknown) {
+        const probeMsg = probeErr instanceof Error ? probeErr.message : '';
+        if (probeMsg.includes('INTERNAL ASSERTION') || probeMsg.includes('is not a function')) {
+          // Corrupted IndexedDB — auto-recovery handler in main.ts will reload
+          showToast('Recargando...', 'info');
+          return;
+        }
         await auth.signOut();
         showToast('Email no autorizado', 'error');
       }

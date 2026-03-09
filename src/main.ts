@@ -12,6 +12,21 @@ let currentRole: string | null = null;
 let currentNombre: string | null = null;
 let layoutReady = false;
 
+// Auto-recover from corrupted Firestore IndexedDB cache
+window.addEventListener('unhandledrejection', (e) => {
+  const msg = e.reason?.message || '';
+  if (msg.includes('INTERNAL ASSERTION FAILED') || msg.includes('is not a function or its return value is not iterable')) {
+    e.preventDefault();
+    console.warn('Firestore cache corrupted, clearing IndexedDB...');
+    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'lahuen-app-532ea';
+    try {
+      indexedDB.deleteDatabase(`firestore/[DEFAULT]/${projectId}/main`);
+    } catch { /* ignore */ }
+    sessionStorage.setItem('lahuen_cache_cleared', '1');
+    location.reload();
+  }
+});
+
 // Show loading immediately while Firebase initializes
 root.innerHTML = `<div class="empty-state" style="min-height:100vh;"><p>Cargando...</p></div>`;
 
