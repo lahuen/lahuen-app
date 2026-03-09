@@ -1,6 +1,7 @@
 import { runTransaction, doc, collection, Timestamp, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { logAudit } from './audit';
+import { getMovimientos } from './store';
 
 export interface LoteInfo {
   numero: string;
@@ -208,4 +209,67 @@ export async function recordStockExit(
     });
   });
   logAudit('update', 'productos', productoId, productoNombre, `salida: -${cantidad} (${motivo})`);
+}
+
+/**
+ * Anular (void) a movimiento by creating a reverse entry.
+ * Adjusts producto and lote quantities accordingly.
+ */
+export async function recordStockAnulacion(movimientoId: string): Promise<void> {
+  const movs = getMovimientos();
+  const original = movs.find(m => m.id === movimientoId);
+  if (!original) throw new Error('Movimiento no encontrado');
+  if (original.motivo === 'anulacion') throw new Error('No se puede anular una anulacion');
+  if (movs.some(m => m.anulacionDe === movimientoId)) throw new Error('Este movimiento ya fue anulado');
+
+  const reverseTipo = original.tipo === 'entrada' ? 'salida' : 'entrada';
+
+  await runTransaction(db, async (tx) => {
+    const prodRef = doc(db, 'productos', original.productoId);
+    const prodSnap = await tx.get(prodRef);
+    if (!prodSnap.exists()) throw new Error('Producto no encontrado');
+
+    const currentQty = prodSnap.data().cantidad as number;
+    const newQty = reverseTipo === 'salida'
+      ? currentQty - original.cantidad
+      : currentQty + original.cantidad;
+
+    if (newQty < 0) throw new Error(`Stock insuficiente para anular. Disponible: ${currentQty}`);
+
+    tx.update(prodRef, {
+      cantidad: newQty,
+      updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
+    });
+
+    // Reverse lote quantity if applicable
+    if (original.loteId) {
+      const loteRef = doc(db, 'lotes', original.loteId);
+      const loteSnap = await tx.get(loteRef);
+      if (loteSnap.exists()) {
+        const loteCurrent = loteSnap.data().cantidad as number;
+        const loteNew = reverseTipo === 'salida'
+          ? Math.max(0, loteCurrent - original.cantidad)
+          : loteCurrent + original.cantidad;
+        tx.update(loteRef, { cantidad: loteNew });
+      }
+    }
+
+    const movRef = doc(collection(db, 'movimientos'));
+    tx.set(movRef, {
+      tipo: reverseTipo,
+      productoId: original.productoId,
+      productoNombre: original.productoNombre,
+      cantidad: original.cantidad,
+      fecha: Timestamp.now(),
+      motivo: 'anulacion' as const,
+      anulacionDe: movimientoId,
+      vendedor: auth.currentUser?.email || '',
+      createdBy: auth.currentUser?.uid || '',
+      createdAt: Timestamp.now(),
+      ...(original.loteId ? { loteId: original.loteId } : {}),
+    });
+  });
+  logAudit('update', 'productos', original.productoId, original.productoNombre,
+    `anulacion de ${original.tipo} ${original.cantidad} (${original.motivo})`);
 }

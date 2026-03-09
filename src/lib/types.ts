@@ -83,7 +83,7 @@ export interface Movimiento {
   productoNombre: string;
   cantidad: number;
   fecha: Timestamp;
-  motivo: 'cosecha' | 'compra' | 'venta' | 'merma' | 'devolucion' | 'ajuste';
+  motivo: 'cosecha' | 'compra' | 'venta' | 'merma' | 'devolucion' | 'ajuste' | 'anulacion';
   vendedor: string;
   createdBy: string;
   createdAt: Timestamp;
@@ -91,4 +91,5 @@ export interface Movimiento {
   prospectoId?: string;
   prospectoLocal?: string;
   precioVenta?: number;
+  anulacionDe?: string;
 }

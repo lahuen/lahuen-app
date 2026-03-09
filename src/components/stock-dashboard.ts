@@ -5,18 +5,33 @@ import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
-import { getProductos, getLotes, subscribe } from '../lib/store';
+import { getProductos, getLotes, getMovimientos, subscribe } from '../lib/store';
 import type { Producto, Lote } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
   container.innerHTML = `
     <div class="page">
-      <div class="stat-grid" style="margin-bottom:var(--sp-5);">
+      <div class="stat-grid" style="margin-bottom:var(--sp-4);">
         <div class="stat-card"><p class="stat-label">Productos</p><p class="stat-value" id="stock-total">--</p></div>
         <div class="stat-card"><p class="stat-label">Valor total</p><p class="stat-value text-accent" id="stock-value">--</p></div>
         <div class="stat-card"><p class="stat-label">Stock bajo</p><p class="stat-value text-warning" id="stock-low">--</p></div>
         <div class="stat-card"><p class="stat-label">Por vencer</p><p class="stat-value text-danger" id="stock-expiring">--</p></div>
         <div class="stat-card"><p class="stat-label">Sin stock</p><p class="stat-value text-danger" id="stock-zero">--</p></div>
+      </div>
+
+      <div id="stock-alerts"></div>
+
+      <div class="insights-panel" id="insights-panel">
+        <div class="insights-header">
+          <span class="insights-label">Insights de stock</span>
+          <button class="action-btn" id="insights-refresh" title="Actualizar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          </button>
+        </div>
+        <div id="insights-content">
+          <div class="insight-skeleton"></div>
+          <div class="insight-skeleton"></div>
+        </div>
       </div>
 
       <div class="toolbar">
@@ -116,15 +131,26 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   // Single delegated click listener for stock grid actions
   document.getElementById('stock-grid')!.addEventListener('click', handleGridClick);
 
-  // Subscribe to global store (no new Firestore listeners — data is cached)
+  // Insights refresh button
+  document.getElementById('insights-refresh')!.addEventListener('click', () => {
+    import('../lib/stock-insights').then(({ clearInsightsCache }) => {
+      clearInsightsCache();
+      loadInsights();
+    });
+  });
+
+  // Subscribe to global store
   const unsub = subscribe(refresh);
 
   // Render immediately from cache
   refresh();
+  // Load AI insights (async, non-blocking)
+  loadInsights();
 
   function refresh() {
     renderGrid();
     updateKpis();
+    renderAlerts();
   }
 
   function lotesForProduct(productoId: string): (Lote & { id: string })[] {
@@ -158,6 +184,109 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     document.getElementById('stock-low')!.textContent = String(low);
     document.getElementById('stock-expiring')!.textContent = String(expiring);
     document.getElementById('stock-zero')!.textContent = String(zero);
+  }
+
+  function renderAlerts() {
+    const el = document.getElementById('stock-alerts');
+    if (!el) return;
+
+    const now = new Date();
+    const weekFromNow = new Date(now.getTime() + 7 * 86400000);
+    const alerts: { icon: string; text: string; cls: string }[] = [];
+
+    // Expiring lotes
+    const expiringLotes = getLotes().filter(l =>
+      l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate() <= weekFromNow
+    );
+    for (const l of expiringLotes.slice(0, 3)) {
+      const days = Math.max(0, Math.ceil((l.vencimiento!.toDate().getTime() - now.getTime()) / 86400000));
+      alerts.push({
+        icon: 'clock',
+        text: `${l.productoNombre} (${l.numero}): ${l.cantidad} uds ${days <= 0 ? 'VENCIDO' : `vence en ${days}d`}`,
+        cls: days <= 0 ? 'alert-danger' : 'alert-warning',
+      });
+    }
+
+    // Zero stock products
+    const zeroStock = getProductos().filter(p => p.cantidad === 0);
+    if (zeroStock.length > 0) {
+      alerts.push({
+        icon: 'box',
+        text: `Sin stock: ${zeroStock.map(p => p.nombre).join(', ')}`,
+        cls: 'alert-danger',
+      });
+    }
+
+    // Recent anulaciones (last 24h)
+    const yesterday = new Date(now.getTime() - 86400000);
+    const recentAnul = getMovimientos().filter(m =>
+      m.motivo === 'anulacion' && m.fecha.toDate() >= yesterday
+    );
+    if (recentAnul.length > 0) {
+      alerts.push({
+        icon: 'undo',
+        text: `${recentAnul.length} anulacion${recentAnul.length > 1 ? 'es' : ''} en las ultimas 24h`,
+        cls: 'alert-info',
+      });
+    }
+
+    if (alerts.length === 0) {
+      el.innerHTML = '';
+      return;
+    }
+
+    const iconSvg: Record<string, string> = {
+      clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+      box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
+      undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
+    };
+
+    el.innerHTML = `
+      <div class="stock-alerts">
+        ${alerts.map(a => `
+          <div class="alert-item ${a.cls}">
+            <span class="alert-icon">${iconSvg[a.icon] || ''}</span>
+            <span>${esc(a.text)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function loadInsights() {
+    const contentEl = document.getElementById('insights-content');
+    if (!contentEl) return;
+
+    contentEl.innerHTML = '<div class="insight-skeleton"></div><div class="insight-skeleton"></div>';
+
+    try {
+      const { getStockInsights } = await import('../lib/stock-insights');
+      const insights = await getStockInsights();
+
+      if (insights.length === 0) {
+        contentEl.innerHTML = '<p class="text-xs text-tertiary">Sin insights disponibles</p>';
+        return;
+      }
+
+      const iconSvg: Record<string, string> = {
+        trend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
+        rotation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
+        alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        recommendation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+      };
+
+      contentEl.innerHTML = insights.map(i => `
+        <div class="insight-card insight-${i.severity}">
+          <span class="insight-icon">${iconSvg[i.icon] || iconSvg.recommendation}</span>
+          <div>
+            <strong class="insight-title">${esc(i.title)}</strong>
+            <p class="insight-text">${esc(i.text)}</p>
+          </div>
+        </div>
+      `).join('');
+    } catch {
+      contentEl.innerHTML = '<p class="text-xs text-tertiary">Error cargando insights</p>';
+    }
   }
 
   function renderGrid() {
@@ -230,7 +359,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         <div id="stock-inline-${p.id}" style="display:none;margin-top:var(--sp-3);"></div>
       </div>`;
     }).join('');
-
   }
 
   function handleGridClick(e: Event) {
