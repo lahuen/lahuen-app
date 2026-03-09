@@ -112,10 +112,18 @@ export async function recordSale(
   const targetLoteId = loteId || await findFefoLote(productoId);
 
   await runTransaction(db, async (tx) => {
+    // ALL reads first
     const prodRef = doc(db, 'productos', productoId);
     const snap = await tx.get(prodRef);
     if (!snap.exists()) throw new Error('Producto no encontrado');
 
+    let loteSnap = null;
+    const loteRef = targetLoteId ? doc(db, 'lotes', targetLoteId) : null;
+    if (loteRef) {
+      loteSnap = await tx.get(loteRef);
+    }
+
+    // ALL writes after reads
     const current = snap.data().cantidad as number;
     if (current < cantidad) {
       throw new Error(`Stock insuficiente. Disponible: ${current}`);
@@ -127,14 +135,9 @@ export async function recordSale(
       updatedBy: auth.currentUser?.email || '',
     });
 
-    // Decrement lote cantidad
-    if (targetLoteId) {
-      const loteRef = doc(db, 'lotes', targetLoteId);
-      const loteSnap = await tx.get(loteRef);
-      if (loteSnap.exists()) {
-        const loteCurrent = loteSnap.data().cantidad as number;
-        tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
-      }
+    if (loteRef && loteSnap && loteSnap.exists()) {
+      const loteCurrent = loteSnap.data().cantidad as number;
+      tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
     }
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -170,10 +173,18 @@ export async function recordStockExit(
   const targetLoteId = loteId || await findFefoLote(productoId);
 
   await runTransaction(db, async (tx) => {
+    // ALL reads first
     const prodRef = doc(db, 'productos', productoId);
     const snap = await tx.get(prodRef);
     if (!snap.exists()) throw new Error('Producto no encontrado');
 
+    let loteSnap = null;
+    const loteRef = targetLoteId ? doc(db, 'lotes', targetLoteId) : null;
+    if (loteRef) {
+      loteSnap = await tx.get(loteRef);
+    }
+
+    // ALL writes after reads
     const current = snap.data().cantidad as number;
     if (current < cantidad) {
       throw new Error(`Stock insuficiente. Disponible: ${current}`);
@@ -185,13 +196,9 @@ export async function recordStockExit(
       updatedBy: auth.currentUser?.email || '',
     });
 
-    if (targetLoteId) {
-      const loteRef = doc(db, 'lotes', targetLoteId);
-      const loteSnap = await tx.get(loteRef);
-      if (loteSnap.exists()) {
-        const loteCurrent = loteSnap.data().cantidad as number;
-        tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
-      }
+    if (loteRef && loteSnap && loteSnap.exists()) {
+      const loteCurrent = loteSnap.data().cantidad as number;
+      tx.update(loteRef, { cantidad: Math.max(0, loteCurrent - cantidad) });
     }
 
     const movRef = doc(collection(db, 'movimientos'));
@@ -225,10 +232,18 @@ export async function recordStockAnulacion(movimientoId: string): Promise<void> 
   const reverseTipo = original.tipo === 'entrada' ? 'salida' : 'entrada';
 
   await runTransaction(db, async (tx) => {
+    // ALL reads first (Firestore requirement)
     const prodRef = doc(db, 'productos', original.productoId);
     const prodSnap = await tx.get(prodRef);
     if (!prodSnap.exists()) throw new Error('Producto no encontrado');
 
+    let loteSnap = null;
+    const loteRef = original.loteId ? doc(db, 'lotes', original.loteId) : null;
+    if (loteRef) {
+      loteSnap = await tx.get(loteRef);
+    }
+
+    // ALL writes after reads
     const currentQty = prodSnap.data().cantidad as number;
     const newQty = reverseTipo === 'salida'
       ? currentQty - original.cantidad
@@ -242,17 +257,12 @@ export async function recordStockAnulacion(movimientoId: string): Promise<void> 
       updatedBy: auth.currentUser?.email || '',
     });
 
-    // Reverse lote quantity if applicable
-    if (original.loteId) {
-      const loteRef = doc(db, 'lotes', original.loteId);
-      const loteSnap = await tx.get(loteRef);
-      if (loteSnap.exists()) {
-        const loteCurrent = loteSnap.data().cantidad as number;
-        const loteNew = reverseTipo === 'salida'
-          ? Math.max(0, loteCurrent - original.cantidad)
-          : loteCurrent + original.cantidad;
-        tx.update(loteRef, { cantidad: loteNew });
-      }
+    if (loteRef && loteSnap && loteSnap.exists()) {
+      const loteCurrent = loteSnap.data().cantidad as number;
+      const loteNew = reverseTipo === 'salida'
+        ? Math.max(0, loteCurrent - original.cantidad)
+        : loteCurrent + original.cantidad;
+      tx.update(loteRef, { cantidad: loteNew });
     }
 
     const movRef = doc(collection(db, 'movimientos'));
