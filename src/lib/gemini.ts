@@ -1,5 +1,6 @@
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { app } from './firebase';
+import { getProductos } from './store';
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 const model = getGenerativeModel(ai, { model: 'gemini-2.5-flash' });
@@ -7,19 +8,27 @@ export { model as geminiModel };
 
 export type SmartAction =
   | { action: 'stock_entrada'; producto: string; cantidad: number; unidad: string; motivo: string }
+  | { action: 'stock_salida'; producto: string; cantidad: number; unidad: string; motivo: string }
   | { action: 'venta'; producto: string; cantidad: number; unidad: string; prospecto: string; precio: number | null }
   | { action: 'nuevo_prospecto'; local: string; contacto: string; whatsapp: string; perfil: string; zona: string }
+  | { action: 'consulta'; query: string }
   | { action: 'error'; message: string };
 
-const SYSTEM_PROMPT = `Sos un asistente de una cooperativa hidroponera argentina llamada Lahuen.
+function buildSystemPrompt(): string {
+  const productNames = getProductos().map(p => p.nombre.toLowerCase());
+  const productList = productNames.length > 0 ? productNames.join(', ') : 'lechuga crespa, lechuga mantecosa, rucula, albahaca, ciboulette, perejil, menta, berro';
+
+  return `Sos un asistente de una cooperativa hidroponera argentina llamada Lahuen.
 Parsea la entrada del usuario y determina que accion quiere hacer.
 
-Hay 3 acciones posibles:
+Hay 5 acciones posibles:
 1. "stock_entrada" - Agregar stock (cosecha o compra). Ejemplo: "cosechamos 200 bandejas de lechuga crespa"
-2. "venta" - Registrar una venta (descuenta stock). Ejemplo: "se vendieron 50 atados de rucula a Restaurant El Roble"
-3. "nuevo_prospecto" - Agregar prospecto al CRM. Ejemplo: "agregar prospecto Bar La Luna zona Moreno contacto Juan 1155667788"
+2. "stock_salida" - Registrar salida/merma/descarte. Ejemplo: "tiramos 10 lechugas", "merma 5 albahaca", "descartamos 20 rucula"
+3. "venta" - Registrar una venta (descuenta stock). Ejemplo: "se vendieron 50 atados de rucula a Restaurant El Roble"
+4. "nuevo_prospecto" - Agregar prospecto al CRM. Ejemplo: "agregar prospecto Bar La Luna zona Moreno contacto Juan 1155667788"
+5. "consulta" - Consulta sobre stock, vencimientos, productos. Ejemplo: "cuanto stock tengo de lechuga?", "que vence esta semana?"
 
-Productos conocidos: lechuga crespa, lechuga mantecosa, rucula, albahaca, ciboulette, perejil, menta, berro.
+Productos conocidos: ${productList}.
 Unidades comunes: bandejas, atados, kg, unidades.
 Perfiles: restaurante, hotel, bar, dietetica, revendedor, mercado, distribuidor, feria, supermercado, comunidad, otro.
 
@@ -28,14 +37,21 @@ Responde SOLO con JSON, sin explicaciones:
 Para stock_entrada:
 {"action":"stock_entrada","producto":"string","cantidad":number,"unidad":"string","motivo":"cosecha|compra|devolucion"}
 
+Para stock_salida:
+{"action":"stock_salida","producto":"string","cantidad":number,"unidad":"string","motivo":"merma|descarte|ajuste"}
+
 Para venta:
 {"action":"venta","producto":"string","cantidad":number,"unidad":"string","prospecto":"string","precio":null}
 
 Para nuevo_prospecto:
 {"action":"nuevo_prospecto","local":"string","contacto":"string","whatsapp":"string","perfil":"string","zona":"string"}
 
+Para consulta:
+{"action":"consulta","query":"la consulta del usuario"}
+
 Si no podes determinar la accion o faltan datos criticos:
 {"action":"error","message":"descripcion del problema"}`;
+}
 
 // Rate limiting: min 3s between calls, max 30 calls per day
 let lastCallTime = 0;
@@ -43,7 +59,7 @@ const DAILY_KEY = 'lahuen_gemini_count';
 const MAX_DAILY = 30;
 const MIN_INTERVAL = 3000;
 
-function checkRateLimit(): boolean {
+export function checkRateLimit(): boolean {
   const now = Date.now();
   if (now - lastCallTime < MIN_INTERVAL) return false;
 
@@ -66,7 +82,7 @@ export async function parseSmartInput(input: string): Promise<SmartAction> {
 
   try {
     const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\nEntrada: "${input}"` }] }],
+      contents: [{ role: 'user', parts: [{ text: `${buildSystemPrompt()}\n\nEntrada: "${input}"` }] }],
       generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
     });
 
@@ -86,16 +102,37 @@ export async function parseSmartInput(input: string): Promise<SmartAction> {
 // ── Local Fallback Parser ──────────────────────────────────────────────────
 
 const ENTRADA_KEYWORDS = ['stock', 'cosecha', 'cosechamos', 'entraron', 'llegaron', 'nuevo stock', 'ingreso'];
+const SALIDA_KEYWORDS = ['tiramos', 'tiraron', 'merma', 'descartamos', 'descarte', 'perdimos', 'se pudrio', 'pudrieron', 'basura'];
 const VENTA_KEYWORDS = ['vendi', 'vendio', 'vendimos', 'venta', 'entrego', 'llevo', 'despacho', 'vendieron'];
 const PROSPECTO_KEYWORDS = ['prospecto', 'nuevo prospecto', 'agregar prospecto', 'nuevo cliente', 'agregar cliente'];
+const CONSULTA_KEYWORDS = ['cuanto', 'cuantos', 'cuantas', 'que vence', 'que tengo', 'hay stock', 'stock de', 'tenemos de', 'queda de', 'cuanto hay'];
 
-const PRODUCT_MAP: Record<string, string> = {
-  lechuga: 'Lechuga Crespa', 'lechuga crespa': 'Lechuga Crespa',
-  'lechuga mantecosa': 'Lechuga Mantecosa', mantecosa: 'Lechuga Mantecosa',
-  rucula: 'Rucula', albahaca: 'Albahaca',
-  ciboulette: 'Ciboulette', perejil: 'Perejil',
-  menta: 'Menta', berro: 'Berro',
-};
+function buildProductMap(): Record<string, string> {
+  const productos = getProductos();
+  const map: Record<string, string> = {};
+  for (const p of productos) {
+    const lower = p.nombre.toLowerCase();
+    map[lower] = p.nombre;
+    // Also add individual words for partial matching (e.g., "lechuga" -> "Lechuga Crespa")
+    const words = lower.split(/\s+/);
+    if (words.length > 1) {
+      for (const w of words) {
+        if (w.length > 3 && !map[w]) map[w] = p.nombre;
+      }
+    }
+  }
+  // Fallback for empty store
+  if (Object.keys(map).length === 0) {
+    Object.assign(map, {
+      lechuga: 'Lechuga Crespa', 'lechuga crespa': 'Lechuga Crespa',
+      'lechuga mantecosa': 'Lechuga Mantecosa', mantecosa: 'Lechuga Mantecosa',
+      rucula: 'Rucula', albahaca: 'Albahaca',
+      ciboulette: 'Ciboulette', perejil: 'Perejil',
+      menta: 'Menta', berro: 'Berro',
+    });
+  }
+  return map;
+}
 
 const UNIT_MAP: Record<string, string> = {
   bandeja: 'bandejas', bandejas: 'bandejas',
@@ -108,23 +145,32 @@ function localParse(input: string): SmartAction {
   const lower = input.toLowerCase().trim();
 
   // Detect action type
-  let actionType: 'stock_entrada' | 'venta' | 'nuevo_prospecto' | null = null;
-  if (PROSPECTO_KEYWORDS.some(k => lower.includes(k))) actionType = 'nuevo_prospecto';
+  let actionType: 'stock_entrada' | 'stock_salida' | 'venta' | 'nuevo_prospecto' | 'consulta' | null = null;
+  if (CONSULTA_KEYWORDS.some(k => lower.includes(k))) actionType = 'consulta';
+  else if (PROSPECTO_KEYWORDS.some(k => lower.includes(k))) actionType = 'nuevo_prospecto';
+  else if (SALIDA_KEYWORDS.some(k => lower.includes(k))) actionType = 'stock_salida';
   else if (VENTA_KEYWORDS.some(k => lower.includes(k))) actionType = 'venta';
   else if (ENTRADA_KEYWORDS.some(k => lower.includes(k))) actionType = 'stock_entrada';
 
   if (!actionType) {
-    return { action: 'error', message: 'No pude entender la accion. Proba con "stock", "venta" o "prospecto".' };
+    return { action: 'error', message: 'No pude entender la accion. Proba con "stock", "venta", "merma", "cuanto..." o "prospecto".' };
+  }
+
+  if (actionType === 'consulta') {
+    return { action: 'consulta', query: input.trim() };
   }
 
   // Extract quantity
   const qtyMatch = lower.match(/(\d+)/);
   const cantidad = qtyMatch ? parseInt(qtyMatch[1], 10) : 0;
 
-  // Extract product
+  // Extract product (dynamic from store)
+  const productMap = buildProductMap();
   let producto = '';
-  for (const [keyword, name] of Object.entries(PRODUCT_MAP)) {
-    if (lower.includes(keyword)) { producto = name; break; }
+  // Try longer keys first for better matching
+  const sortedKeys = Object.keys(productMap).sort((a, b) => b.length - a.length);
+  for (const keyword of sortedKeys) {
+    if (lower.includes(keyword)) { producto = productMap[keyword]; break; }
   }
 
   // Extract unit
@@ -138,6 +184,13 @@ function localParse(input: string): SmartAction {
     if (!cantidad) return { action: 'error', message: 'No detecte la cantidad.' };
     const motivo = lower.includes('compra') ? 'compra' : lower.includes('devolucion') ? 'devolucion' : 'cosecha';
     return { action: 'stock_entrada', producto, cantidad, unidad, motivo };
+  }
+
+  if (actionType === 'stock_salida') {
+    if (!producto) return { action: 'error', message: 'No detecte el producto. Menciona: lechuga, rucula, albahaca, etc.' };
+    if (!cantidad) return { action: 'error', message: 'No detecte la cantidad.' };
+    const motivo = lower.includes('descarte') || lower.includes('basura') ? 'descarte' : lower.includes('ajuste') ? 'ajuste' : 'merma';
+    return { action: 'stock_salida', producto, cantidad, unidad, motivo };
   }
 
   if (actionType === 'venta') {

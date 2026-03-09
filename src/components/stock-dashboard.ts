@@ -6,9 +6,13 @@ import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
 import { getProductos, getLotes, getMovimientos, subscribe } from '../lib/store';
-import type { Producto, Lote } from '../lib/types';
+import { computeAllProductMetrics, computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
+import type { Producto, Lote, Movimiento } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
+  const expandedIds = new Set<string>();
+  const aiResults = new Map<string, string>();
+
   container.innerHTML = `
     <div class="page">
       <div class="stat-grid" style="margin-bottom:var(--sp-4);">
@@ -141,10 +145,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
   // Subscribe to global store
   const unsub = subscribe(refresh);
-
-  // Render immediately from cache
   refresh();
-  // Load AI insights (async, non-blocking)
   loadInsights();
 
   function refresh() {
@@ -162,6 +163,12 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         if (!b.vencimiento) return -1;
         return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
       });
+  }
+
+  function movimientosForProduct(productoId: string): (Movimiento & { id: string })[] {
+    return getMovimientos()
+      .filter(m => m.productoId === productoId)
+      .slice(0, 5);
   }
 
   function updateKpis() {
@@ -194,7 +201,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     const weekFromNow = new Date(now.getTime() + 7 * 86400000);
     const alerts: { icon: string; text: string; cls: string }[] = [];
 
-    // Expiring lotes
     const expiringLotes = getLotes().filter(l =>
       l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate() <= weekFromNow
     );
@@ -207,7 +213,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       });
     }
 
-    // Zero stock products
     const zeroStock = getProductos().filter(p => p.cantidad === 0);
     if (zeroStock.length > 0) {
       alerts.push({
@@ -217,7 +222,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       });
     }
 
-    // Recent anulaciones (last 24h)
     const yesterday = new Date(now.getTime() - 86400000);
     const recentAnul = getMovimientos().filter(m =>
       m.motivo === 'anulacion' && m.fecha.toDate() >= yesterday
@@ -230,10 +234,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       });
     }
 
-    if (alerts.length === 0) {
-      el.innerHTML = '';
-      return;
-    }
+    if (alerts.length === 0) { el.innerHTML = ''; return; }
 
     const iconSvg: Record<string, string> = {
       clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
@@ -241,40 +242,32 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
     };
 
-    el.innerHTML = `
-      <div class="stock-alerts">
-        ${alerts.map(a => `
-          <div class="alert-item ${a.cls}">
-            <span class="alert-icon">${iconSvg[a.icon] || ''}</span>
-            <span>${esc(a.text)}</span>
-          </div>
-        `).join('')}
+    el.innerHTML = `<div class="stock-alerts">${alerts.map(a => `
+      <div class="alert-item ${a.cls}">
+        <span class="alert-icon">${iconSvg[a.icon] || ''}</span>
+        <span>${esc(a.text)}</span>
       </div>
-    `;
+    `).join('')}</div>`;
   }
 
   async function loadInsights() {
     const contentEl = document.getElementById('insights-content');
     if (!contentEl) return;
-
     contentEl.innerHTML = '<div class="insight-skeleton"></div><div class="insight-skeleton"></div>';
 
     try {
       const { getStockInsights } = await import('../lib/stock-insights');
       const insights = await getStockInsights();
-
       if (insights.length === 0) {
         contentEl.innerHTML = '<p class="text-xs text-tertiary">Sin insights disponibles</p>';
         return;
       }
-
       const iconSvg: Record<string, string> = {
         trend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
         rotation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
         alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
         recommendation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
       };
-
       contentEl.innerHTML = insights.map(i => `
         <div class="insight-card insight-${i.severity}">
           <span class="insight-icon">${iconSvg[i.icon] || iconSvg.recommendation}</span>
@@ -287,6 +280,16 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     } catch {
       contentEl.innerHTML = '<p class="text-xs text-tertiary">Error cargando insights</p>';
     }
+  }
+
+  function timeAgo(ts: Timestamp): string {
+    const diff = Date.now() - ts.toDate().getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'hoy';
+    if (days === 1) return 'ayer';
+    if (days < 7) return `hace ${days}d`;
+    if (days < 30) return `hace ${Math.floor(days / 7)}sem`;
+    return formatDate(ts);
   }
 
   function renderGrid() {
@@ -308,80 +311,168 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       return;
     }
 
-    const now = new Date();
-    const weekFromNow = new Date(now.getTime() + 7 * 86400000);
+    const metricsMap = computeAllProductMetrics();
 
     grid.innerHTML = filtered.map(p => {
-      const isLow = p.cantidad > 0 && p.cantidad < 20;
-      const isZero = p.cantidad === 0;
+      const m = metricsMap.get(p.id) || { totalValue: 0, weeklyVelocity: 0, daysToStockout: null, lastMovementDate: null, activeLotes: 0, expiringLotes: 0, expiredLotes: 0 };
       const pLotes = lotesForProduct(p.id);
-      const hasExpiring = pLotes.some(l => l.vencimiento && l.vencimiento.toDate() <= weekFromNow);
-      const cls = hasExpiring ? 'expired' : (isLow || isZero ? 'low-stock' : '');
+      const isZero = p.cantidad === 0;
+      const isLow = p.cantidad > 0 && p.cantidad < 20;
+      const isExpanded = expandedIds.has(p.id);
 
-      const imgHtml = p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" class="stock-card-img" />` : '';
+      // Lote health dots
+      const dots = pLotes.map(l => {
+        const health = computeLoteHealth(l);
+        return `<span class="lote-dot lote-dot-${health}" title="${esc(l.numero)}: ${computeDaysRemaining(l.vencimiento) ?? '--'}d"></span>`;
+      }).join('');
 
-      let lotesHtml = '';
-      if (pLotes.length > 0) {
-        const loteItems = pLotes.map(l => {
-          const isExp = l.vencimiento && l.vencimiento.toDate() <= weekFromNow;
-          return `<div class="lote-item ${isExp ? 'lote-expiring' : ''}">
-            <span class="lote-numero">${esc(l.numero)}</span>
-            <span class="lote-qty">${l.cantidad} uds</span>
-            ${l.vencimiento ? `<span class="lote-venc">${formatDate(l.vencimiento)}</span>` : ''}
-            ${l.ubicacion ? `<span class="lote-ubic">${esc(l.ubicacion)}</span>` : ''}
-          </div>`;
-        }).join('');
+      // Velocity / stockout labels
+      const velLabel = m.weeklyVelocity > 0 ? `${m.weeklyVelocity}/sem` : '--';
+      const stockoutLabel = m.daysToStockout != null ? `~${m.daysToStockout}d` : '--';
 
-        lotesHtml = `
-          <button class="lote-toggle" data-lote-toggle="${p.id}">Lotes (${pLotes.length})</button>
-          <div class="lote-list" id="lotes-${p.id}" style="display:none;">${loteItems}</div>
-        `;
+      // Expanded content
+      let expandedHtml = '';
+      if (isExpanded) {
+        expandedHtml = renderExpanded(p, pLotes, m);
       }
 
-      return `<div class="stock-card ${cls}" data-id="${p.id}">
-        ${imgHtml}
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--sp-3);">
-          <div>
+      return `<div class="stock-card stock-card-compact ${isExpanded ? 'expanded' : ''}" data-id="${p.id}">
+        <div class="stock-card-header" data-expand="${p.id}">
+          <div class="stock-card-info">
             <strong>${esc(p.nombre)}</strong>
-            <div class="text-secondary text-xs">${esc(p.proveedor || '')}</div>
+            <span class="text-xs text-secondary">${esc(p.proveedor || '')}</span>
           </div>
           <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'}">${p.cantidad} ${esc(p.unidad)}</span>
         </div>
-        <div class="text-xs text-secondary" style="margin-bottom:var(--sp-3);">
-          ${p.precio ? formatCurrency(p.precio) + ' / ' + esc(p.unidad) : ''}
-          ${p.updatedBy ? `<br>Editado por ${esc(p.updatedBy.split('@')[0])}` : ''}
+        <div class="stock-card-metrics" data-expand="${p.id}">
+          <span class="metric">${formatCurrency(m.totalValue)}</span>
+          <span class="metric">${velLabel}</span>
+          <span class="metric">${stockoutLabel}</span>
+          <span class="metric lote-dots">${dots || '<span class="text-tertiary">--</span>'}</span>
+          <svg class="expand-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        ${lotesHtml}
-        <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
-          <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>
-          <button class="btn btn-sm btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">- Salida</button>
-        </div>
-        <div id="stock-inline-${p.id}" style="display:none;margin-top:var(--sp-3);"></div>
+        ${expandedHtml}
       </div>`;
     }).join('');
+  }
+
+  function renderExpanded(p: Producto & { id: string }, pLotes: (Lote & { id: string })[], m: { totalValue: number; weeklyVelocity: number; daysToStockout: number | null }): string {
+    const movs = movimientosForProduct(p.id);
+
+    // Lotes section
+    const lotesHtml = pLotes.length > 0 ? pLotes.map((l, i) => {
+      const health = computeLoteHealth(l);
+      const days = computeDaysRemaining(l.vencimiento);
+      const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
+      const isFefo = i === 0;
+      return `<div class="lote-detail ${isFefo ? 'lote-fefo' : ''}">
+        <div class="lote-detail-header">
+          <span class="lote-numero">${esc(l.numero)}</span>
+          ${isFefo ? '<span class="badge badge-accent" style="font-size:10px;">FEFO</span>' : ''}
+          <span class="lote-qty">${l.cantidad} uds</span>
+          ${l.ubicacion ? `<span class="lote-ubic">${esc(l.ubicacion)}</span>` : ''}
+        </div>
+        <div class="lote-shelf-life">
+          <div class="shelf-life-bar"><div class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></div></div>
+          <span class="text-xs ${health === 'danger' || health === 'expired' ? 'text-danger' : 'text-secondary'}">${days != null ? (days <= 0 ? 'Vencido' : days + 'd') : 'Sin venc.'}</span>
+        </div>
+      </div>`;
+    }).join('') : '<p class="text-xs text-tertiary">Sin lotes activos</p>';
+
+    // Recent movements
+    const movsHtml = movs.length > 0 ? movs.map(mv => {
+      const tipoCls = mv.tipo === 'entrada' ? 'badge-success' : 'badge-danger';
+      return `<div class="mini-mov">
+        <span class="badge ${tipoCls}" style="font-size:10px;padding:1px 6px;">${mv.tipo === 'entrada' ? '+' : '-'}</span>
+        <span>${mv.cantidad}</span>
+        <span class="text-secondary">${esc(mv.motivo)}</span>
+        <span class="text-xs text-tertiary" style="margin-left:auto;">${timeAgo(mv.fecha)}</span>
+      </div>`;
+    }).join('') : '<p class="text-xs text-tertiary">Sin movimientos</p>';
+
+    // AI result (if cached)
+    const cachedAi = aiResults.get(p.id);
+    const aiHtml = cachedAi
+      ? `<div class="ai-result">${esc(cachedAi)}</div>`
+      : '';
+
+    return `<div class="stock-card-expanded">
+      <div class="expanded-section">
+        <h4>Lotes (${pLotes.length})</h4>
+        ${lotesHtml}
+      </div>
+      <div class="expanded-section">
+        <h4>Ultimos movimientos</h4>
+        ${movsHtml}
+      </div>
+      <div class="expanded-actions">
+        <button class="btn btn-sm btn-secondary" data-ai-analyze="${p.id}">Analizar con AI</button>
+        <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>
+        <button class="btn btn-sm btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">- Salida</button>
+      </div>
+      <div id="ai-result-${p.id}">${aiHtml}</div>
+      <div id="stock-inline-${p.id}" style="display:none;margin-top:var(--sp-3);"></div>
+    </div>`;
   }
 
   function handleGridClick(e: Event) {
     const target = e.target as HTMLElement;
 
-    const toggleBtn = target.closest('[data-lote-toggle]') as HTMLElement | null;
-    if (toggleBtn) {
-      const prodId = toggleBtn.dataset.loteToggle!;
-      const list = document.getElementById(`lotes-${prodId}`);
-      if (list) {
-        const isHidden = list.style.display === 'none';
-        list.style.display = isHidden ? '' : 'none';
-        toggleBtn.classList.toggle('open', isHidden);
+    // Expand/collapse
+    const expandBtn = target.closest('[data-expand]') as HTMLElement | null;
+    if (expandBtn && !target.closest('button') && !target.closest('input') && !target.closest('select')) {
+      const pid = expandBtn.dataset.expand!;
+      if (expandedIds.has(pid)) {
+        expandedIds.delete(pid);
+      } else {
+        expandedIds.add(pid);
       }
+      renderGrid();
       return;
     }
 
-    const btn = target.closest('[data-stock-action]') as HTMLElement | null;
-    if (!btn) return;
-    const action = btn.dataset.stockAction as 'entrada' | 'salida';
-    const id = btn.dataset.id!;
-    const name = btn.dataset.name!;
+    // AI analyze
+    const aiBtn = target.closest('[data-ai-analyze]') as HTMLElement | null;
+    if (aiBtn) {
+      const pid = aiBtn.dataset.aiAnalyze!;
+      handleAiAnalyze(pid, aiBtn as HTMLButtonElement);
+      return;
+    }
+
+    // Stock actions (entrada/salida)
+    const actionBtn = target.closest('[data-stock-action]') as HTMLElement | null;
+    if (!actionBtn) return;
+    const action = actionBtn.dataset.stockAction as 'entrada' | 'salida';
+    const id = actionBtn.dataset.id!;
+    const name = actionBtn.dataset.name!;
     showInlineForm(id, name, action);
+  }
+
+  async function handleAiAnalyze(productoId: string, btn: HTMLButtonElement) {
+    const resultEl = document.getElementById(`ai-result-${productoId}`);
+    if (!resultEl) return;
+
+    // Check if already cached in memory
+    if (aiResults.has(productoId)) {
+      resultEl.innerHTML = `<div class="ai-result">${esc(aiResults.get(productoId)!)}</div>`;
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Analizando...';
+    resultEl.innerHTML = '<p class="text-xs text-tertiary ai-loading">Pensando...</p>';
+
+    try {
+      const { getProductInsight } = await import('../lib/stock-insights');
+      const insight = await getProductInsight(productoId);
+      aiResults.set(productoId, insight);
+      resultEl.innerHTML = `<div class="ai-result">${esc(insight)}</div>`;
+    } catch {
+      resultEl.innerHTML = '<p class="text-xs text-tertiary">Error al analizar</p>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Analizar con AI';
+    }
   }
 
   function showInlineForm(productoId: string, productoNombre: string, tipo: 'entrada' | 'salida') {

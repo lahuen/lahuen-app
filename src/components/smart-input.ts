@@ -2,8 +2,9 @@ import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
 import { parseSmartInput, type SmartAction } from '../lib/gemini';
 import { findBestProspectMatch } from '../lib/fuzzy-match';
-import { recordStockEntry, recordSale } from '../lib/stock';
-import { getProductos, getProspectos } from '../lib/store';
+import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
+import { getProductos, getProspectos, getLotes } from '../lib/store';
+import { computeProductMetrics } from '../lib/stock-metrics';
 
 let pendingInput = '';
 
@@ -115,6 +116,30 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
       return;
     }
 
+    if (result.action === 'stock_salida') {
+      const producto = findProducto(result.producto);
+      if (!producto) {
+        hintEl.textContent = `Producto "${result.producto}" no encontrado.`;
+        return;
+      }
+      showConfirmation(
+        `Salida: ${result.cantidad} ${result.unidad} de ${producto.nombre} (${result.motivo})`,
+        async () => {
+          await recordStockExit(producto.id!, producto.nombre, result.cantidad, result.motivo as 'merma' | 'ajuste');
+          showToast('Salida registrada', 'success');
+          clearInput();
+        },
+      );
+      return;
+    }
+
+    if (result.action === 'consulta') {
+      const answer = answerQuery(result.query);
+      hintEl.textContent = answer;
+      hintEl.style.display = '';
+      return;
+    }
+
     if (result.action === 'nuevo_prospecto') {
       // Pre-fill and navigate to form
       // Store in sessionStorage so crm-form can pick it up
@@ -175,6 +200,47 @@ export function renderSmartInput(container: HTMLElement): (() => void) | null {
 
   function getProspects() {
     return getProspectos().map(p => ({ id: p.id, local: p.local, contacto: p.contacto }));
+  }
+
+  function answerQuery(query: string): string {
+    const lower = query.toLowerCase();
+    const productos = getProductos();
+    const lotes = getLotes();
+
+    // "cuanto stock de X?" or "tenemos de X?"
+    const matchedProduct = productos.find(p => lower.includes(p.nombre.toLowerCase()));
+    if (matchedProduct) {
+      const m = computeProductMetrics(matchedProduct.id);
+      const productLotes = lotes.filter(l => l.productoId === matchedProduct.id && l.cantidad > 0);
+      let answer = `${matchedProduct.nombre}: ${matchedProduct.cantidad} ${matchedProduct.unidad}`;
+      if (m.weeklyVelocity > 0) answer += `, velocidad ${m.weeklyVelocity}/sem`;
+      if (m.daysToStockout != null) answer += `, stock para ~${m.daysToStockout}d`;
+      if (productLotes.length > 0) answer += `, ${productLotes.length} lote(s) activo(s)`;
+      if (m.expiringLotes > 0) answer += `, ${m.expiringLotes} por vencer`;
+      return answer;
+    }
+
+    // "que vence esta semana?"
+    if (lower.includes('vence') || lower.includes('vencimiento')) {
+      const now = Date.now();
+      const weekFromNow = now + 7 * 86400000;
+      const expiring = lotes.filter(l =>
+        l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate().getTime() <= weekFromNow && l.vencimiento.toDate().getTime() > now
+      );
+      if (expiring.length === 0) return 'No hay lotes por vencer esta semana.';
+      return `${expiring.length} lote(s) por vencer: ${expiring.map(l => {
+        const days = Math.ceil((l.vencimiento!.toDate().getTime() - now) / 86400000);
+        return `${l.productoNombre} (${l.numero}) en ${days}d`;
+      }).join(', ')}`;
+    }
+
+    // Generic stock overview
+    const total = productos.reduce((s, p) => s + p.cantidad, 0);
+    const value = productos.reduce((s, p) => s + p.cantidad * p.precio, 0);
+    const zeroStock = productos.filter(p => p.cantidad === 0);
+    let answer = `${productos.length} productos, ${total} unidades totales, valor $${Math.round(value)}`;
+    if (zeroStock.length > 0) answer += `. Sin stock: ${zeroStock.map(p => p.nombre).join(', ')}`;
+    return answer;
   }
 
   return null;

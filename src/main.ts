@@ -81,6 +81,7 @@ function renderLayout() {
       <nav class="tab-nav" id="tab-nav">
         <a class="tab" href="#stock" data-tab="#stock">Stock</a>
         <a class="tab" href="#movimientos" data-tab="#movimientos">Movimientos</a>
+        <a class="tab" href="#lotes" data-tab="#lotes">Lotes</a>
         <a class="tab" href="#crm" data-tab="#crm">CRM</a>
         <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
         <a class="tab" href="#nuevo" data-tab="#nuevo">Nuevo</a>
@@ -175,6 +176,9 @@ function navigateToHash() {
         case '#movimientos':
           loadComponent('stock-movimientos', view);
           break;
+        case '#lotes':
+          loadComponent('lotes-dashboard', view);
+          break;
         case '#audit':
           loadComponent('audit-dashboard', view);
           break;
@@ -223,6 +227,11 @@ async function loadComponent(name: string, container: HTMLElement, param?: strin
       case 'agenda-dashboard': {
         const { renderAgendaDashboard } = await import('./components/agenda-dashboard');
         cleanup = renderAgendaDashboard(container) || null;
+        break;
+      }
+      case 'lotes-dashboard': {
+        const { renderLotesDashboard } = await import('./components/lotes-dashboard');
+        cleanup = renderLotesDashboard(container) || null;
         break;
       }
       case 'audit-dashboard': {

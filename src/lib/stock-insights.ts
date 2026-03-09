@@ -1,5 +1,6 @@
-import { geminiModel } from './gemini';
-import { getProductos, getLotes, getMovimientos } from './store';
+import { geminiModel, checkRateLimit } from './gemini';
+import { getProductos, getLotes, getMovimientos, getProspectos } from './store';
+import { computeProductMetrics } from './stock-metrics';
 import type { Producto, Lote, Movimiento } from './types';
 
 export interface StockInsight {
@@ -36,6 +37,124 @@ export async function getStockInsights(): Promise<StockInsight[]> {
 
 export function clearInsightsCache(): void {
   try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+}
+
+// ── Per-Product Insight ───────────────────────────────────────────────────
+
+const PRODUCT_CACHE_PREFIX = 'lahuen_product_insight_';
+const PRODUCT_CACHE_TTL = 5 * 60 * 60 * 1000; // 5 hours
+
+export async function getProductInsight(productoId: string): Promise<string> {
+  // Check cache
+  const cached = loadProductCache(productoId);
+  if (cached) return cached;
+
+  const metrics = computeProductMetrics(productoId);
+  const producto = getProductos().find(p => p.id === productoId);
+  if (!producto) return 'Producto no encontrado.';
+
+  // Build local fallback first
+  const localInsight = buildLocalProductInsight(producto, metrics);
+
+  // Try Gemini if rate limit allows
+  if (!checkRateLimit()) return localInsight;
+
+  try {
+    const context = buildProductContext(producto, productoId, metrics);
+    const result = await geminiModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: context }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+    });
+    const text = result.response.text().trim();
+    if (text) {
+      saveProductCache(productoId, text);
+      return text;
+    }
+    return localInsight;
+  } catch {
+    return localInsight;
+  }
+}
+
+function buildProductContext(producto: Producto & { id: string }, productoId: string, metrics: ReturnType<typeof computeProductMetrics>): string {
+  const lotes = getLotes().filter(l => l.productoId === productoId && l.cantidad > 0);
+  const movimientos = getMovimientos().filter(m => m.productoId === productoId).slice(0, 10);
+  const prospectos = getProspectos().filter(p =>
+    p.productosInteres && p.productosInteres.toLowerCase().includes(producto.nombre.toLowerCase())
+    && p.resultado !== 'no_interesado'
+  );
+
+  let ctx = `Sos el analista de stock de Lahuen (cooperativa hidroponica argentina).
+Analiza ESTE producto y da recomendaciones accionables en 2-3 oraciones.
+Lenguaje argentino informal y directo. Sin JSON, solo texto.
+
+PRODUCTO: ${producto.nombre}
+Stock actual: ${producto.cantidad} ${producto.unidad}
+Precio unitario: $${producto.precio}
+Valor total: $${Math.round(metrics.totalValue)}
+Velocidad: ${metrics.weeklyVelocity}/semana
+`;
+
+  if (metrics.daysToStockout != null) {
+    ctx += `Dias para quedarse sin stock: ~${metrics.daysToStockout}\n`;
+  }
+
+  if (lotes.length > 0) {
+    ctx += `\nLOTES (${lotes.length}):\n`;
+    for (const l of lotes) {
+      const days = l.vencimiento ? Math.ceil((l.vencimiento.toDate().getTime() - Date.now()) / 86400000) : null;
+      ctx += `- ${l.numero}: ${l.cantidad} uds, ${days != null ? (days <= 0 ? 'VENCIDO' : `vence en ${days}d`) : 'sin vencimiento'}${l.ubicacion ? `, ${l.ubicacion}` : ''}\n`;
+    }
+  }
+
+  if (movimientos.length > 0) {
+    ctx += `\nMOVIMIENTOS RECIENTES:\n`;
+    for (const m of movimientos.slice(0, 5)) {
+      ctx += `- ${m.tipo} ${m.cantidad} (${m.motivo}) ${m.fecha.toDate().toLocaleDateString('es-AR')}\n`;
+    }
+  }
+
+  if (prospectos.length > 0) {
+    ctx += `\nPROSPECTOS INTERESADOS:\n`;
+    for (const p of prospectos.slice(0, 3)) {
+      ctx += `- ${p.local} (${p.resultado})${p.contacto ? `, contacto: ${p.contacto}` : ''}\n`;
+    }
+  }
+
+  return ctx;
+}
+
+function buildLocalProductInsight(producto: Producto & { id: string }, metrics: ReturnType<typeof computeProductMetrics>): string {
+  const parts: string[] = [];
+  parts.push(`Velocidad: ${metrics.weeklyVelocity}/sem.`);
+  if (metrics.daysToStockout != null) {
+    parts.push(`Stock para ~${metrics.daysToStockout} dias.`);
+  } else if (producto.cantidad === 0) {
+    parts.push('Sin stock.');
+  }
+  if (metrics.expiringLotes > 0) {
+    parts.push(`${metrics.expiringLotes} lote(s) por vencer.`);
+  }
+  if (metrics.expiredLotes > 0) {
+    parts.push(`${metrics.expiredLotes} lote(s) vencido(s).`);
+  }
+  return parts.join(' ');
+}
+
+function loadProductCache(productoId: string): string | null {
+  try {
+    const raw = localStorage.getItem(PRODUCT_CACHE_PREFIX + productoId);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { text: string; timestamp: number };
+    if (Date.now() - data.timestamp > PRODUCT_CACHE_TTL) return null;
+    return data.text;
+  } catch { return null; }
+}
+
+function saveProductCache(productoId: string, text: string) {
+  try {
+    localStorage.setItem(PRODUCT_CACHE_PREFIX + productoId, JSON.stringify({ text, timestamp: Date.now() }));
+  } catch { /* ignore */ }
 }
 
 // ── Analytics Context ─────────────────────────────────────────────────────

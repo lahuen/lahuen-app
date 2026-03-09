@@ -48,10 +48,15 @@ function gatherContext(): ContextResult {
   const weekFromNow = new Date(now.getTime() + 7 * 86400000);
   const threeDays = new Date(now.getTime() + 3 * 86400000);
 
+  const productos = getProductos();
+  const priceMap = new Map<string, number>();
+  for (const p of productos) priceMap.set(p.id, p.precio);
+
   // Stock alerts
   const expiring: string[] = [];
   const lowStock: string[] = [];
   const outOfStock: string[] = [];
+  let riskValue = 0;
 
   // Check expiring from lotes (cantidad > 0)
   for (const l of getLotes()) {
@@ -59,12 +64,14 @@ function gatherContext(): ContextResult {
       const vDate = l.vencimiento.toDate();
       if (vDate <= weekFromNow) {
         const days = Math.ceil((vDate.getTime() - now.getTime()) / 86400000);
-        expiring.push(`- ${l.productoNombre} (lote ${l.numero}): ${l.cantidad} uds, vence en ${days <= 0 ? 'VENCIDO' : days + ' dias'}`);
+        const price = priceMap.get(l.productoId) || 0;
+        riskValue += l.cantidad * price;
+        expiring.push(`- ${l.productoNombre} (lote ${l.numero}): ${l.cantidad} uds, vence en ${days <= 0 ? 'VENCIDO' : days + ' dias'}, valor $${Math.round(l.cantidad * price)}`);
       }
     }
   }
 
-  for (const p of getProductos()) {
+  for (const p of productos) {
     if (p.cantidad === 0) {
       outOfStock.push(`- ${p.nombre}: sin stock`);
     } else if (p.cantidad > 0 && p.cantidad < 20) {
@@ -75,6 +82,15 @@ function gatherContext(): ContextResult {
   // CRM alerts
   const overdue: string[] = [];
   const upcoming: string[] = [];
+
+  // Cross-reference: prospects interested in expiring products
+  const crossRef: string[] = [];
+  const expiringProductNames = new Set<string>();
+  for (const l of getLotes()) {
+    if (l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate() <= weekFromNow) {
+      expiringProductNames.add(l.productoNombre.toLowerCase());
+    }
+  }
 
   for (const p of getProspectos()) {
     if (p.resultado === 'cliente' || p.resultado === 'no_interesado') continue;
@@ -89,13 +105,26 @@ function gatherContext(): ContextResult {
         upcoming.push(`- ${p.local}: seguimiento en ${days === 0 ? 'HOY' : days + 'd'}, resultado=${p.resultado}${p.productosInteres ? ', interes=' + p.productosInteres : ''}`);
       }
     }
+
+    // Cross-reference: prospect interested in product that's expiring
+    if (p.productosInteres && expiringProductNames.size > 0) {
+      const interests = p.productosInteres.toLowerCase();
+      for (const name of expiringProductNames) {
+        if (interests.includes(name)) {
+          crossRef.push(`- ${p.local} esta interesado en ${name} (que vence pronto). Contacto: ${p.contacto || 'sin contacto'}`);
+          break;
+        }
+      }
+    }
   }
 
-  const hasEvents = expiring.length + lowStock.length + outOfStock.length + overdue.length + upcoming.length > 0;
-  const dataHash = `${expiring.length}-${lowStock.length}-${outOfStock.length}-${overdue.length}-${upcoming.length}`;
+  const hasEvents = expiring.length + lowStock.length + outOfStock.length + overdue.length + upcoming.length + crossRef.length > 0;
+  const dataHash = `${expiring.length}-${lowStock.length}-${outOfStock.length}-${overdue.length}-${upcoming.length}-${crossRef.length}-${Math.round(riskValue)}`;
 
   let prompt = '';
+  if (riskValue > 0) prompt += `VALOR EN RIESGO (stock por vencer): $${Math.round(riskValue)}\n\n`;
   if (expiring.length) prompt += `STOCK POR VENCER:\n${expiring.join('\n')}\n\n`;
+  if (crossRef.length) prompt += `OPORTUNIDADES (prospectos interesados en productos por vencer):\n${crossRef.join('\n')}\n\n`;
   if (outOfStock.length) prompt += `SIN STOCK:\n${outOfStock.join('\n')}\n\n`;
   if (lowStock.length) prompt += `STOCK BAJO:\n${lowStock.join('\n')}\n\n`;
   if (overdue.length) prompt += `SEGUIMIENTOS VENCIDOS:\n${overdue.join('\n')}\n\n`;
