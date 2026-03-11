@@ -11,7 +11,6 @@ import type { Producto, Lote, Movimiento } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
   const expandedIds = new Set<string>();
-  const aiResults = new Map<string, string>();
   let viewMode: 'cards' | 'treemap' = (localStorage.getItem('lahuen_stock_view') as 'cards' | 'treemap') || 'cards';
   let treemapCleanup: (() => void) | null = null;
 
@@ -27,14 +26,15 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
       <div id="stock-alerts"></div>
 
-      <div class="insights-panel" id="insights-panel">
+      <div class="insights-panel" id="report-panel">
         <div class="insights-header">
-          <span class="insights-label">Insights de stock</span>
-          <button class="action-btn" id="insights-refresh" title="Actualizar">
+          <span class="insights-label">Reporte diario</span>
+          <button class="action-btn" id="report-refresh" title="Regenerar reporte">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
           </button>
         </div>
-        <div id="insights-content">
+        <div id="report-delta"></div>
+        <div id="report-content">
           <div class="insight-skeleton"></div>
           <div class="insight-skeleton"></div>
         </div>
@@ -159,18 +159,17 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     refresh();
   });
 
-  // Insights refresh button
-  document.getElementById('insights-refresh')!.addEventListener('click', () => {
-    import('../lib/stock-insights').then(({ clearInsightsCache }) => {
-      clearInsightsCache();
-      loadInsights();
+  // Report refresh button
+  document.getElementById('report-refresh')!.addEventListener('click', () => {
+    import('../lib/stock-report').then(({ refreshStockReport }) => {
+      loadReport(refreshStockReport);
     });
   });
 
   // Subscribe to global store
   const unsub = subscribe(refresh, ['productos', 'lotes', 'movimientos']);
   refresh();
-  loadInsights();
+  loadReport();
 
   function refresh() {
     if (treemapCleanup) { treemapCleanup(); treemapCleanup = null; }
@@ -296,35 +295,82 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     `).join('')}</div>`;
   }
 
-  async function loadInsights() {
-    const contentEl = document.getElementById('insights-content');
+  async function loadReport(fetchFn?: () => Promise<unknown>) {
+    const contentEl = document.getElementById('report-content');
+    const deltaEl = document.getElementById('report-delta');
     if (!contentEl) return;
     contentEl.innerHTML = '<div class="insight-skeleton"></div><div class="insight-skeleton"></div>';
+    if (deltaEl) deltaEl.innerHTML = '';
 
     try {
-      const { getStockInsights } = await import('../lib/stock-insights');
-      const insights = await getStockInsights();
-      if (insights.length === 0) {
-        contentEl.innerHTML = '<p class="text-xs text-tertiary">Sin insights disponibles</p>';
+      const { getStockReport, refreshStockReport } = await import('../lib/stock-report');
+      const report = await (fetchFn ? fetchFn() as ReturnType<typeof getStockReport> : getStockReport());
+      if (!report) {
+        contentEl.innerHTML = '<p class="text-xs text-tertiary">Sin datos para generar reporte</p>';
         return;
       }
+
+      // Delta bar
+      if (deltaEl && report.delta) {
+        const d = report.delta;
+        const arrow = (v: number) => v > 0 ? '<span class="delta-up">+' : v < 0 ? '<span class="delta-down">' : '<span class="delta-neutral">';
+        deltaEl.innerHTML = `<div class="report-delta-bar">
+          <span class="text-xs text-secondary">vs hace ${d.daysBetween}d:</span>
+          ${arrow(d.totalValueChangePct)}${d.totalValueChangePct}% valor</span>
+          ${arrow(d.totalUnitsChange)}${d.totalUnitsChange} uds</span>
+          ${arrow(-d.zeroStockChange)}${d.zeroStockChange > 0 ? '+' : ''}${d.zeroStockChange} sin stock</span>
+          ${d.ventasValueChange !== 0 ? `${arrow(d.ventasValueChange)}$${Math.abs(Math.round(d.ventasValueChange))} ventas</span>` : ''}
+        </div>`;
+      } else if (deltaEl) {
+        deltaEl.innerHTML = '<div class="report-delta-bar"><span class="text-xs text-tertiary">Primer reporte -- sin comparacion</span></div>';
+      }
+
+      // Delta comment from AI
+      let html = '';
+      if (report.deltaComment) {
+        html += `<div class="report-delta-comment">${esc(report.deltaComment)}</div>`;
+      }
+
+      // Insights
       const iconSvg: Record<string, string> = {
         trend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
         rotation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
         alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
         recommendation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
       };
-      contentEl.innerHTML = insights.map(i => `
-        <div class="insight-card insight-${i.severity}">
-          <span class="insight-icon">${iconSvg[i.icon] || iconSvg.recommendation}</span>
-          <div>
-            <strong class="insight-title">${esc(i.title)}</strong>
-            <p class="insight-text">${esc(i.text)}</p>
+      if (report.insights.length > 0) {
+        html += report.insights.map(i => `
+          <div class="insight-card insight-${i.severity}">
+            <span class="insight-icon">${iconSvg[i.icon] || iconSvg.recommendation}</span>
+            <div>
+              <strong class="insight-title">${esc(i.title)}</strong>
+              <p class="insight-text">${esc(i.text)}</p>
+            </div>
           </div>
-        </div>
-      `).join('');
+        `).join('');
+      }
+
+      // Suggestions
+      const sugIconSvg: Record<string, string> = {
+        expiry: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+        followup: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M16 2v4M8 2v4M4 10h16"/></svg>',
+        lowstock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+        opportunity: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>',
+      };
+      if (report.suggestions.length > 0) {
+        html += `<div class="report-suggestions">`;
+        html += report.suggestions.map(s => `
+          <div class="suggestion-item">
+            <span class="suggestion-icon">${sugIconSvg[s.icon] || sugIconSvg.opportunity}</span>
+            <span>${esc(s.text)}</span>
+          </div>
+        `).join('');
+        html += `</div>`;
+      }
+
+      contentEl.innerHTML = html || '<p class="text-xs text-tertiary">Sin insights disponibles</p>';
     } catch {
-      contentEl.innerHTML = '<p class="text-xs text-tertiary">Error cargando insights</p>';
+      contentEl.innerHTML = '<p class="text-xs text-tertiary">Error cargando reporte</p>';
     }
   }
 
@@ -402,8 +448,21 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }).join('');
   }
 
-  function renderExpanded(p: Producto & { id: string }, pLotes: (Lote & { id: string })[], m: { totalValue: number; weeklyVelocity: number; daysToStockout: number | null }): string {
+  function renderExpanded(p: Producto & { id: string }, pLotes: (Lote & { id: string })[], m: { totalValue: number; weeklyVelocity: number; daysToStockout: number | null; lastMovementDate: Date | null; expiringLotes: number; expiredLotes: number }): string {
     const movs = movimientosForProduct(p.id);
+
+    // Local metrics summary (replaces per-product AI)
+    const metricParts: string[] = [];
+    metricParts.push(`Velocidad: ${m.weeklyVelocity > 0 ? m.weeklyVelocity + '/sem' : '--'}`);
+    if (m.daysToStockout != null) metricParts.push(`Stock para ~${m.daysToStockout}d`);
+    else if (p.cantidad === 0) metricParts.push('Sin stock');
+    if (m.expiringLotes > 0) metricParts.push(`${m.expiringLotes} lote(s) por vencer`);
+    if (m.expiredLotes > 0) metricParts.push(`${m.expiredLotes} vencido(s)`);
+    if (m.lastMovementDate) {
+      const daysAgo = Math.floor((Date.now() - m.lastMovementDate.getTime()) / 86400000);
+      metricParts.push(`Ultimo mov: ${daysAgo === 0 ? 'hoy' : daysAgo === 1 ? 'ayer' : 'hace ' + daysAgo + 'd'}`);
+    }
+    metricParts.push(`Valor: ${formatCurrency(m.totalValue)}`);
 
     // Lotes section
     const lotesHtml = pLotes.length > 0 ? pLotes.map((l, i) => {
@@ -436,13 +495,8 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       </div>`;
     }).join('') : '<p class="text-xs text-tertiary">Sin movimientos</p>';
 
-    // AI result (if cached)
-    const cachedAi = aiResults.get(p.id);
-    const aiHtml = cachedAi
-      ? `<div class="ai-result">${esc(cachedAi)}</div>`
-      : '';
-
     return `<div class="stock-card-expanded">
+      <div class="product-metrics-summary">${metricParts.join(' · ')}</div>
       <div class="expanded-section">
         <h4>Lotes (${pLotes.length})</h4>
         ${lotesHtml}
@@ -452,11 +506,9 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         ${movsHtml}
       </div>
       <div class="expanded-actions">
-        <button class="btn btn-sm btn-secondary" data-ai-analyze="${p.id}">Analizar con AI</button>
         <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>
         <button class="btn btn-sm btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">- Salida</button>
       </div>
-      <div id="ai-result-${p.id}">${aiHtml}</div>
       <div id="stock-inline-${p.id}" style="display:none;margin-top:var(--sp-3);"></div>
     </div>`;
   }
@@ -477,14 +529,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       return;
     }
 
-    // AI analyze
-    const aiBtn = target.closest('[data-ai-analyze]') as HTMLElement | null;
-    if (aiBtn) {
-      const pid = aiBtn.dataset.aiAnalyze!;
-      handleAiAnalyze(pid, aiBtn as HTMLButtonElement);
-      return;
-    }
-
     // Stock actions (entrada/salida)
     const actionBtn = target.closest('[data-stock-action]') as HTMLElement | null;
     if (!actionBtn) return;
@@ -492,33 +536,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     const id = actionBtn.dataset.id!;
     const name = actionBtn.dataset.name!;
     showInlineForm(id, name, action);
-  }
-
-  async function handleAiAnalyze(productoId: string, btn: HTMLButtonElement) {
-    const resultEl = document.getElementById(`ai-result-${productoId}`);
-    if (!resultEl) return;
-
-    // Check if already cached in memory
-    if (aiResults.has(productoId)) {
-      resultEl.innerHTML = `<div class="ai-result">${esc(aiResults.get(productoId)!)}</div>`;
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Analizando...';
-    resultEl.innerHTML = '<p class="text-xs text-tertiary ai-loading">Pensando...</p>';
-
-    try {
-      const { getProductInsight } = await import('../lib/stock-insights');
-      const insight = await getProductInsight(productoId);
-      aiResults.set(productoId, insight);
-      resultEl.innerHTML = `<div class="ai-result">${esc(insight)}</div>`;
-    } catch {
-      resultEl.innerHTML = '<p class="text-xs text-tertiary">Error al analizar</p>';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Analizar con AI';
-    }
   }
 
   function showInlineForm(productoId: string, productoNombre: string, tipo: 'entrada' | 'salida') {

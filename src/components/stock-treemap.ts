@@ -29,7 +29,6 @@ function getCellTier(w: number, h: number): CellTier {
 
 // Module-level state preserved across re-renders from parent
 let _selectedId: string | null = null;
-const _aiResults = new Map<string, string>();
 
 export function renderStockTreemap(
   container: HTMLElement,
@@ -37,7 +36,6 @@ export function renderStockTreemap(
 ): (() => void) | null {
   // Use module-level state so selection persists across store-driven re-renders
   const selectedId = _selectedId;
-  const aiResults = _aiResults;
 
   render();
 
@@ -124,13 +122,6 @@ export function renderStockTreemap(
       return;
     }
 
-    // AI analyze button
-    const aiBtn = target.closest('[data-tm-ai]') as HTMLElement | null;
-    if (aiBtn) {
-      handleAiAnalyze(aiBtn.dataset.tmAi!, aiBtn as HTMLButtonElement);
-      return;
-    }
-
     // Stock action buttons
     const actionBtn = target.closest('[data-tm-action]') as HTMLElement | null;
     if (actionBtn) {
@@ -187,9 +178,20 @@ export function renderStockTreemap(
       </div>`;
     }).join('') : '<p class="text-xs text-tertiary">Sin movimientos</p>';
 
-    // AI result
-    const cachedAi = aiResults.get(productoId);
-    const aiHtml = cachedAi ? `<div class="ai-result">${esc(cachedAi)}</div>` : '';
+    // Local metrics summary (replaces per-product AI)
+    const metricParts: string[] = [];
+    if (m) {
+      metricParts.push(`Velocidad: ${m.weeklyVelocity > 0 ? m.weeklyVelocity + '/sem' : '--'}`);
+      if (m.daysToStockout != null) metricParts.push(`Stock para ~${m.daysToStockout}d`);
+      else if (p.cantidad === 0) metricParts.push('Sin stock');
+      if (m.expiringLotes > 0) metricParts.push(`${m.expiringLotes} lote(s) por vencer`);
+      if (m.expiredLotes > 0) metricParts.push(`${m.expiredLotes} vencido(s)`);
+      if (m.lastMovementDate) {
+        const daysAgo = Math.floor((Date.now() - m.lastMovementDate.getTime()) / 86400000);
+        metricParts.push(`Ultimo mov: ${daysAgo === 0 ? 'hoy' : daysAgo === 1 ? 'ayer' : 'hace ' + daysAgo + 'd'}`);
+      }
+      metricParts.push(`Valor: ${formatCurrency(m.totalValue)}`);
+    }
 
     return `<div class="treemap-detail">
       <div class="treemap-detail-header">
@@ -199,6 +201,7 @@ export function renderStockTreemap(
         </div>
         <span class="badge treemap-${health}" style="color:#fff;">${health === 'ok' ? 'OK' : health === 'low' ? 'Bajo' : health === 'danger' ? 'Riesgo' : 'Sin stock'}</span>
       </div>
+      ${metricParts.length > 0 ? `<div class="product-metrics-summary">${metricParts.join(' · ')}</div>` : ''}
       <div class="grid-2">
         <div class="expanded-section">
           <h4>Lotes (${pLotes.length})</h4>
@@ -210,39 +213,11 @@ export function renderStockTreemap(
         </div>
       </div>
       <div class="expanded-actions" style="margin-top:var(--sp-3);">
-        <button class="btn btn-sm btn-secondary" data-tm-ai="${productoId}">Analizar con AI</button>
         <button class="btn btn-sm btn-primary" data-tm-action="entrada" data-tm-id="${productoId}" data-tm-name="${esc(p.nombre)}">+ Entrada</button>
         <button class="btn btn-sm btn-secondary" data-tm-action="salida" data-tm-id="${productoId}" data-tm-name="${esc(p.nombre)}">- Salida</button>
       </div>
-      <div id="tm-ai-result-${productoId}">${aiHtml}</div>
       <div id="tm-inline-${productoId}" style="display:none;margin-top:var(--sp-3);"></div>
     </div>`;
-  }
-
-  async function handleAiAnalyze(productoId: string, btn: HTMLButtonElement) {
-    const resultEl = document.getElementById(`tm-ai-result-${productoId}`);
-    if (!resultEl) return;
-
-    if (aiResults.has(productoId)) {
-      resultEl.innerHTML = `<div class="ai-result">${esc(aiResults.get(productoId)!)}</div>`;
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Analizando...';
-    resultEl.innerHTML = '<p class="text-xs text-tertiary ai-loading">Pensando...</p>';
-
-    try {
-      const { getProductInsight } = await import('../lib/stock-insights');
-      const insight = await getProductInsight(productoId);
-      aiResults.set(productoId, insight);
-      resultEl.innerHTML = `<div class="ai-result">${esc(insight)}</div>`;
-    } catch {
-      resultEl.innerHTML = '<p class="text-xs text-tertiary">Error al analizar</p>';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Analizar con AI';
-    }
   }
 
   function showInlineForm(productoId: string, productoNombre: string, tipo: 'entrada' | 'salida') {

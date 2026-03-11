@@ -100,7 +100,6 @@ function renderLayout() {
       </div>
     </header>
     <div id="smart-input-container"></div>
-    <div id="suggestions-container"></div>
     <main class="content" id="view">
       <div class="empty-state"><p>Cargando...</p></div>
     </main>
@@ -135,9 +134,6 @@ function renderLayout() {
   const smartContainer = document.getElementById('smart-input-container')!;
   import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer)).catch(() => {});
 
-  // AI suggestions banner (async, non-blocking)
-  const suggestionsContainer = document.getElementById('suggestions-container')!;
-  import('./components/suggestions-banner').then(({ renderSuggestionsBanner }) => renderSuggestionsBanner(suggestionsContainer)).catch(() => {});
 }
 
 /** Navigate: only swap the #view content + update active tab */

@@ -938,6 +938,48 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .insight-title { font-size: var(--text-sm); font-weight: 600; display: block; margin-bottom: 2px; }
 .insight-text { font-size: var(--text-xs); color: var(--color-secondary); line-height: 1.4; margin: 0; white-space: pre-wrap; word-break: break-word; }
 
+/* Report delta bar */
+.report-delta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-3);
+}
+.delta-up { color: var(--color-accent); font-weight: var(--weight-medium); font-size: var(--text-xs); }
+.delta-down { color: var(--color-danger); font-weight: var(--weight-medium); font-size: var(--text-xs); }
+.delta-neutral { color: var(--color-secondary); font-weight: var(--weight-medium); font-size: var(--text-xs); }
+
+.report-delta-comment {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-accent);
+  margin-bottom: var(--sp-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.report-suggestions {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.product-metrics-summary {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+  line-height: 1.5;
+  padding: var(--sp-2) 0;
+  margin-bottom: var(--sp-2);
+}
+
 /* Loading skeleton */
 .insight-skeleton {
   height: 56px; border-radius: var(--radius-sm);
