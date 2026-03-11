@@ -24,19 +24,25 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         <div class="stat-card"><p class="stat-label">Sin stock</p><p class="stat-value text-danger" id="stock-zero">--</p></div>
       </div>
 
-      <div id="stock-alerts"></div>
-
-      <div class="insights-panel" id="report-panel">
-        <div class="insights-header">
-          <span class="insights-label">Reporte diario</span>
-          <button class="action-btn" id="report-refresh" title="Regenerar reporte">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
-          </button>
+      <div class="report-strip" id="report-panel">
+        <div class="report-strip-header" id="report-header">
+          <div style="display:flex;align-items:center;gap:var(--sp-2);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+            <span class="report-strip-label">Reporte diario</span>
+            <span id="report-summary" class="text-xs text-secondary"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--sp-1);">
+            <button class="action-btn" id="report-refresh" title="Regenerar reporte">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+            </button>
+            <svg class="report-strip-chevron" id="report-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
         </div>
-        <div id="report-delta"></div>
-        <div id="report-content">
-          <div class="insight-skeleton"></div>
-          <div class="insight-skeleton"></div>
+        <div class="report-strip-body" id="report-body" style="display:none;">
+          <div id="report-delta"></div>
+          <div id="report-content">
+            <div class="insight-skeleton"></div>
+          </div>
         </div>
       </div>
 
@@ -159,6 +165,17 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     refresh();
   });
 
+  // Report: collapsible header
+  document.getElementById('report-header')!.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('#report-refresh')) return; // don't toggle on refresh click
+    const body = document.getElementById('report-body')!;
+    const chevron = document.getElementById('report-chevron')!;
+    const panel = document.getElementById('report-panel')!;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : '';
+    panel.classList.toggle('report-strip-open', !isOpen);
+  });
+
   // Report refresh button
   document.getElementById('report-refresh')!.addEventListener('click', () => {
     import('../lib/stock-report').then(({ refreshStockReport }) => {
@@ -179,7 +196,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       renderGrid();
     }
     updateKpis();
-    renderAlerts();
   }
 
   function renderTreemapView() {
@@ -236,63 +252,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     document.getElementById('stock-low')!.textContent = String(low);
     document.getElementById('stock-expiring')!.textContent = String(expiring);
     document.getElementById('stock-zero')!.textContent = String(zero);
-  }
-
-  function renderAlerts() {
-    const el = document.getElementById('stock-alerts');
-    if (!el) return;
-
-    const now = new Date();
-    const weekFromNow = new Date(now.getTime() + 7 * 86400000);
-    const alerts: { icon: string; text: string; cls: string }[] = [];
-
-    const expiringLotes = getLotes().filter(l =>
-      l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate() <= weekFromNow
-    );
-    for (const l of expiringLotes.slice(0, 3)) {
-      const days = Math.max(0, Math.ceil((l.vencimiento!.toDate().getTime() - now.getTime()) / 86400000));
-      alerts.push({
-        icon: 'clock',
-        text: `${l.productoNombre} (${l.numero}): ${l.cantidad} uds ${days <= 0 ? 'VENCIDO' : `vence en ${days}d`}`,
-        cls: days <= 0 ? 'alert-danger' : 'alert-warning',
-      });
-    }
-
-    const zeroStock = getProductos().filter(p => p.cantidad === 0);
-    if (zeroStock.length > 0) {
-      alerts.push({
-        icon: 'box',
-        text: `Sin stock: ${zeroStock.map(p => p.nombre).join(', ')}`,
-        cls: 'alert-danger',
-      });
-    }
-
-    const yesterday = new Date(now.getTime() - 86400000);
-    const recentAnul = getMovimientos().filter(m =>
-      m.motivo === 'anulacion' && m.fecha.toDate() >= yesterday
-    );
-    if (recentAnul.length > 0) {
-      alerts.push({
-        icon: 'undo',
-        text: `${recentAnul.length} anulacion${recentAnul.length > 1 ? 'es' : ''} en las ultimas 24h`,
-        cls: 'alert-info',
-      });
-    }
-
-    if (alerts.length === 0) { el.innerHTML = ''; return; }
-
-    const iconSvg: Record<string, string> = {
-      clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
-      box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
-      undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
-    };
-
-    el.innerHTML = `<div class="stock-alerts">${alerts.map(a => `
-      <div class="alert-item ${a.cls}">
-        <span class="alert-icon">${iconSvg[a.icon] || ''}</span>
-        <span>${esc(a.text)}</span>
-      </div>
-    `).join('')}</div>`;
   }
 
   async function loadReport(fetchFn?: () => Promise<unknown>) {
@@ -369,6 +328,15 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       }
 
       contentEl.innerHTML = html || '<p class="text-xs text-tertiary">Sin insights disponibles</p>';
+
+      // Update collapsed summary
+      const summaryEl = document.getElementById('report-summary');
+      if (summaryEl) {
+        const parts: string[] = [];
+        if (report.insights.length > 0) parts.push(`${report.insights.length} insight${report.insights.length > 1 ? 's' : ''}`);
+        if (report.suggestions.length > 0) parts.push(`${report.suggestions.length} sugerencia${report.suggestions.length > 1 ? 's' : ''}`);
+        summaryEl.textContent = parts.length > 0 ? `· ${parts.join(' · ')}` : '';
+      }
     } catch {
       contentEl.innerHTML = '<p class="text-xs text-tertiary">Error cargando reporte</p>';
     }
@@ -410,6 +378,14 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       const pLotes = lotesForProduct(p.id);
       const isZero = p.cantidad === 0;
       const isLow = p.cantidad > 0 && p.cantidad < 20;
+      const hasExpired = m.expiredLotes > 0;
+      const hasExpiring = !hasExpired && m.expiringLotes > 0;
+      const cardAlertCls = hasExpired ? 'stock-card-danger' : hasExpiring ? 'stock-card-warning' : '';
+      const alertIcon = hasExpired
+        ? '<svg class="card-alert-icon card-alert-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+        : hasExpiring
+        ? '<svg class="card-alert-icon card-alert-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+        : '';
       const isExpanded = expandedIds.has(p.id);
 
       // Lote health dots
@@ -428,10 +404,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         expandedHtml = renderExpanded(p, pLotes, m);
       }
 
-      return `<div class="stock-card stock-card-compact ${isExpanded ? 'expanded' : ''}" data-id="${p.id}">
+      return `<div class="stock-card stock-card-compact ${cardAlertCls} ${isExpanded ? 'expanded' : ''}" data-id="${p.id}">
         <div class="stock-card-header" data-expand="${p.id}">
           <div class="stock-card-info">
-            <strong>${esc(p.nombre)}</strong>
+            <strong>${alertIcon}${esc(p.nombre)}</strong>
             <span class="text-xs text-secondary">${esc(p.proveedor || '')}</span>
           </div>
           <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'}">${p.cantidad} ${esc(p.unidad)}</span>

@@ -938,6 +938,50 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .insight-title { font-size: var(--text-sm); font-weight: 600; display: block; margin-bottom: 2px; }
 .insight-text { font-size: var(--text-xs); color: var(--color-secondary); line-height: 1.4; margin: 0; white-space: pre-wrap; word-break: break-word; }
 
+/* ── Report Strip (collapsible) ─────────────────────────────────────────── */
+
+.report-strip {
+  margin-bottom: var(--sp-3);
+  background: linear-gradient(135deg, rgba(22,163,74,.03), rgba(59,130,246,.03));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.report-strip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+}
+.report-strip-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-accent);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.report-strip-chevron {
+  color: var(--color-tertiary);
+  transition: transform .2s;
+}
+.report-strip-open .report-strip-chevron { transform: rotate(180deg); }
+.report-strip-body {
+  padding: 0 var(--sp-3) var(--sp-3);
+}
+
+/* Card alert indicators */
+.stock-card-compact.stock-card-danger { border-left: 3px solid var(--color-danger); }
+.stock-card-compact.stock-card-warning { border-left: 3px solid var(--color-warning); }
+.card-alert-icon {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.card-alert-icon.card-alert-danger { color: var(--color-danger); }
+.card-alert-icon.card-alert-warning { color: var(--color-warning); }
+
 /* Report delta bar */
 .report-delta-bar {
   display: flex;
