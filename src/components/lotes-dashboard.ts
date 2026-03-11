@@ -61,7 +61,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
   filterEl.addEventListener('change', () => { filter = filterEl.value as FilterType; rebuild(); });
   productFilterEl.addEventListener('change', () => { productFilter = productFilterEl.value; rebuild(); });
 
-  const unsub = subscribe(rebuild);
+  const unsub = subscribe(rebuild, ['productos', 'lotes']);
   rebuild();
 
   function rebuild() {

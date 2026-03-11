@@ -51,7 +51,7 @@ export function renderStockMovimientos(container: HTMLElement): (() => void) | n
   // Delegated click for anular buttons
   container.addEventListener('click', handleAnular);
 
-  const unsub = subscribe(applyFilter);
+  const unsub = subscribe(applyFilter, ['movimientos']);
   applyFilter();
 
   /** Set of anulado movimiento IDs (originals that have been voided) */

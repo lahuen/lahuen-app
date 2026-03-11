@@ -65,14 +65,18 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
   const filterResultado = document.getElementById('crm-filter-resultado') as HTMLSelectElement;
   const filterVendedor = document.getElementById('crm-filter-vendedor') as HTMLSelectElement;
 
-  searchEl.addEventListener('input', applyFilters);
+  let searchTimer: ReturnType<typeof setTimeout>;
+  searchEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 200);
+  });
   filterResultado.addEventListener('change', applyFilters);
   filterVendedor.addEventListener('change', applyFilters);
 
   // Single delegated click listener for all row actions (tbody + cards)
   container.addEventListener('click', handleRowAction);
 
-  const unsub = subscribe(() => { populateVendedorFilter(); applyFilters(); });
+  const unsub = subscribe(() => { populateVendedorFilter(); applyFilters(); }, ['prospectos']);
   // Render immediately from cache
   populateVendedorFilter();
   applyFilters();

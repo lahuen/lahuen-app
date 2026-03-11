@@ -158,6 +158,8 @@ body {
   font-size: var(--text-xs);
   color: var(--color-secondary);
   margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .smart-loading::after {
   content: '...';
@@ -634,6 +636,8 @@ tbody tr:hover { background: var(--color-accent-muted); }
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--color-accent);
   margin-top: var(--sp-2);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .ai-loading {
   animation: pulse 1.5s ease-in-out infinite;
@@ -932,7 +936,7 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .insight-card.insight-info { border-left-color: #3b82f6; }
 .insight-icon { flex-shrink: 0; color: var(--color-secondary); margin-top: 1px; }
 .insight-title { font-size: var(--text-sm); font-weight: 600; display: block; margin-bottom: 2px; }
-.insight-text { font-size: var(--text-xs); color: var(--color-secondary); line-height: 1.4; margin: 0; }
+.insight-text { font-size: var(--text-xs); color: var(--color-secondary); line-height: 1.4; margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 /* Loading skeleton */
 .insight-skeleton {
@@ -955,3 +959,156 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .mov-card.row-anulado { opacity: .45; }
 .mov-card.row-anulacion { border-left: 3px solid #3b82f6; }
 .btn-anular { font-size: 11px; padding: 2px 8px; }
+
+/* ── View Toggle ──────────────────────────────────────────────────────── */
+
+.view-toggle {
+  display: flex;
+  gap: var(--sp-1);
+  background: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+}
+.view-toggle-btn {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-secondary);
+  cursor: pointer;
+  transition: all .2s;
+}
+.view-toggle-btn.active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Treemap ──────────────────────────────────────────────────────────── */
+
+.treemap-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.treemap-cell {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(255,255,255,.5);
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter .15s, box-shadow .15s;
+  user-select: none;
+}
+.treemap-cell:hover {
+  filter: brightness(1.08);
+  z-index: 1;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.5);
+}
+.treemap-cell-selected {
+  box-shadow: inset 0 0 0 3px var(--color-text) !important;
+  filter: brightness(1.05);
+  z-index: 2;
+}
+
+/* Health colors */
+.treemap-ok     { background: #22c55e; color: #fff; }
+.treemap-low    { background: #f59e0b; color: #fff; }
+.treemap-danger { background: #ef4444; color: #fff; }
+.treemap-zero   { background: #9ca3af; color: #fff; }
+
+/* Cell content */
+.treemap-cell-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.treemap-cell-qty {
+  font-size: var(--text-xs);
+  opacity: .9;
+  line-height: 1.3;
+}
+.treemap-cell-value {
+  font-size: var(--text-xs);
+  opacity: .8;
+  line-height: 1.3;
+}
+.treemap-cell-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: 10px;
+  opacity: .75;
+  line-height: 1.3;
+}
+
+/* Content tiers — hide elements based on cell size */
+.treemap-cell-tiny .treemap-cell-qty,
+.treemap-cell-tiny .treemap-cell-value,
+.treemap-cell-tiny .treemap-cell-meta { display: none; }
+.treemap-cell-tiny .treemap-cell-name { font-size: var(--text-xs); }
+
+.treemap-cell-small .treemap-cell-value,
+.treemap-cell-small .treemap-cell-meta { display: none; }
+
+.treemap-cell-medium .treemap-cell-meta { display: none; }
+
+/* Zero stock row */
+.treemap-zero-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.treemap-zero-badge {
+  cursor: pointer;
+  transition: background .15s;
+}
+.treemap-zero-badge:hover { background: rgba(0,0,0,.12); }
+
+/* Detail panel below treemap */
+.treemap-detail {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+  margin-top: var(--sp-3);
+  animation: slideDown .2s ease;
+}
+.treemap-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Responsive treemap */
+@media (max-width: 768px) {
+  .treemap-container { aspect-ratio: 4 / 3; }
+  .treemap-cell { padding: var(--sp-1) var(--sp-2); }
+  .treemap-cell-name { font-size: var(--text-xs); }
+  .treemap-cell-qty { font-size: 10px; }
+  .treemap-cell-value { display: none; }
+  .treemap-cell-meta { display: none; }
+}

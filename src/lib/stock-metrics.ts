@@ -41,11 +41,25 @@ export function computeShelfLifePercent(fechaIngreso: Timestamp, vencimiento: Ti
   return Math.max(0, Math.min(100, (remaining / totalLife) * 100));
 }
 
-/** Single-pass computation of metrics for all products. */
+// Memoization: recompute only when store arrays change (reference equality)
+let _cachedMetrics: Map<string, ProductMetrics> | null = null;
+let _prevProductos: unknown = null;
+let _prevLotes: unknown = null;
+let _prevMovimientos: unknown = null;
+
+/** Single-pass computation of metrics for all products (memoized). */
 export function computeAllProductMetrics(): Map<string, ProductMetrics> {
   const productos = getProductos();
   const lotes = getLotes();
   const movimientos = getMovimientos();
+
+  // Return cached result if store data hasn't changed
+  if (_cachedMetrics && productos === _prevProductos && lotes === _prevLotes && movimientos === _prevMovimientos) {
+    return _cachedMetrics;
+  }
+  _prevProductos = productos;
+  _prevLotes = lotes;
+  _prevMovimientos = movimientos;
   const now = Date.now();
   const thirtyDaysAgo = now - 30 * DAY_MS;
   const weekMs = 7 * DAY_MS;
@@ -110,6 +124,7 @@ export function computeAllProductMetrics(): Map<string, ProductMetrics> {
     }
   }
 
+  _cachedMetrics = metrics;
   return metrics;
 }
 

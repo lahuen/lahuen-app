@@ -12,6 +12,8 @@ import type { Producto, Lote, Movimiento } from '../lib/types';
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
   const expandedIds = new Set<string>();
   const aiResults = new Map<string, string>();
+  let viewMode: 'cards' | 'treemap' = (localStorage.getItem('lahuen_stock_view') as 'cards' | 'treemap') || 'cards';
+  let treemapCleanup: (() => void) | null = null;
 
   container.innerHTML = `
     <div class="page">
@@ -42,6 +44,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         <div class="search-wrap">
           <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" class="search-input" placeholder="Buscar producto..." id="stock-search" />
+        </div>
+        <div class="view-toggle" id="view-toggle">
+          <button class="view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}" data-view="cards">Cards</button>
+          <button class="view-toggle-btn ${viewMode === 'treemap' ? 'active' : ''}" data-view="treemap">Treemap</button>
         </div>
         <button class="btn btn-primary btn-sm" id="add-product-btn">+ Producto</button>
         <span id="stock-count" class="badge badge-neutral">-- productos</span>
@@ -100,9 +106,13 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   addBtn.addEventListener('click', () => { addForm.style.display = addForm.style.display === 'none' ? '' : 'none'; });
   document.getElementById('cancel-product')!.addEventListener('click', () => { addForm.style.display = 'none'; });
 
-  // Search
+  // Search (debounced)
   const stockSearch = document.getElementById('stock-search') as HTMLInputElement;
-  stockSearch.addEventListener('input', refresh);
+  let searchTimer: ReturnType<typeof setTimeout>;
+  stockSearch.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(refresh, 200);
+  });
 
   // Product form submit
   const productForm = document.getElementById('product-form') as HTMLFormElement;
@@ -135,6 +145,20 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   // Single delegated click listener for stock grid actions
   document.getElementById('stock-grid')!.addEventListener('click', handleGridClick);
 
+  // View toggle
+  document.getElementById('view-toggle')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-view]') as HTMLElement | null;
+    if (!btn) return;
+    const newMode = btn.dataset.view as 'cards' | 'treemap';
+    if (newMode === viewMode) return;
+    viewMode = newMode;
+    localStorage.setItem('lahuen_stock_view', viewMode);
+    document.querySelectorAll('#view-toggle .view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.view === viewMode);
+    });
+    refresh();
+  });
+
   // Insights refresh button
   document.getElementById('insights-refresh')!.addEventListener('click', () => {
     import('../lib/stock-insights').then(({ clearInsightsCache }) => {
@@ -144,14 +168,36 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   });
 
   // Subscribe to global store
-  const unsub = subscribe(refresh);
+  const unsub = subscribe(refresh, ['productos', 'lotes', 'movimientos']);
   refresh();
   loadInsights();
 
   function refresh() {
-    renderGrid();
+    if (treemapCleanup) { treemapCleanup(); treemapCleanup = null; }
+    if (viewMode === 'treemap') {
+      renderTreemapView();
+    } else {
+      renderGrid();
+    }
     updateKpis();
     renderAlerts();
+  }
+
+  function renderTreemapView() {
+    const grid = document.getElementById('stock-grid');
+    if (!grid) return;
+    const searchQ = (stockSearch?.value || '').toLowerCase();
+    const allProducts = getProductos();
+    const filtered = searchQ
+      ? allProducts.filter(p => p.nombre.toLowerCase().includes(searchQ) || (p.proveedor || '').toLowerCase().includes(searchQ))
+      : allProducts;
+    document.getElementById('stock-count')!.textContent = filtered.length + ' productos';
+
+    import('./stock-treemap').then(({ renderStockTreemap }) => {
+      treemapCleanup = renderStockTreemap(grid, searchQ);
+    }).catch(() => {
+      grid.innerHTML = '<div class="empty-state"><p>Error cargando treemap</p></div>';
+    });
   }
 
   function lotesForProduct(productoId: string): (Lote & { id: string })[] {
@@ -596,5 +642,8 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     });
   }
 
-  return () => unsub();
+  return () => {
+    unsub();
+    if (treemapCleanup) { treemapCleanup(); treemapCleanup = null; }
+  };
 }

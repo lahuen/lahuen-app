@@ -12,8 +12,9 @@ let currentRole: string | null = null;
 let currentNombre: string | null = null;
 let layoutReady = false;
 
-// Auto-recover from corrupted Firestore IndexedDB cache
+// Auto-recover from corrupted Firestore IndexedDB cache (once per session)
 window.addEventListener('unhandledrejection', (e) => {
+  if (sessionStorage.getItem('lahuen_cache_cleared')) return; // prevent reload loop
   const msg = e.reason?.message || '';
   if (msg.includes('INTERNAL ASSERTION FAILED') || msg.includes('is not a function or its return value is not iterable')) {
     e.preventDefault();
@@ -47,9 +48,9 @@ onAuthStateChanged(auth, async (user) => {
     if (!layoutReady) {
       renderLayout();
       layoutReady = true;
+      window.addEventListener('hashchange', navigateToHash);
     }
     navigateToHash();
-    window.addEventListener('hashchange', navigateToHash);
     import('./lib/notifications').then(({ checkAndNotify }) => checkAndNotify()).catch(() => {});
   } else {
     currentRole = null;
