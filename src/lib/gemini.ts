@@ -1,6 +1,6 @@
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { app } from './firebase';
-import { getProductos, getLotes, getMovimientos } from './store';
+import { getProductos, getLotes, getMovimientos, getProspectos } from './store';
 import { computeFunnel } from './funnel';
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
@@ -107,11 +107,13 @@ export async function parseSmartInput(input: string): Promise<SmartAction> {
 const ENTRADA_KEYWORDS = ['stock', 'cosecha', 'cosechamos', 'entraron', 'llegaron', 'nuevo stock', 'ingreso'];
 const SALIDA_KEYWORDS = ['tiramos', 'tiraron', 'merma', 'descartamos', 'descarte', 'perdimos', 'se pudrio', 'pudrieron', 'basura'];
 const VENTA_KEYWORDS = ['vendi', 'vendio', 'vendimos', 'venta', 'entrego', 'llevo', 'despacho', 'vendieron'];
-const PROSPECTO_KEYWORDS = ['prospecto', 'nuevo prospecto', 'agregar prospecto', 'nuevo cliente', 'agregar cliente'];
+const PROSPECTO_KEYWORDS = ['nuevo prospecto', 'agregar prospecto', 'nuevo cliente', 'agregar cliente', 'crear prospecto'];
 const CONSULTA_KEYWORDS = [
-  'cuanto', 'cuantos', 'cuantas', 'que vence', 'que tengo', 'hay stock', 'stock de', 'tenemos de', 'queda de', 'cuanto hay',
+  'cuanto', 'cuantos', 'cuantas', 'cuales', 'cual', 'quienes', 'cuando',
+  'que vence', 'que tengo', 'hay stock', 'stock de', 'tenemos de', 'queda de', 'cuanto hay',
   'como se', 'como hago', 'como registro', 'como cargo', 'como funciona', 'para que', 'que es', 'que hace', 'explicame',
   'ayuda', 'help', 'como uso', 'como navego', 'donde esta', 'donde encuentro', 'que puedo', 'como puedo',
+  'mis prospecto', 'mis cliente', 'nunca', 'sin contactar', 'pendiente', 'analiz',
 ];
 
 function buildProductMap(): Record<string, string> {
@@ -287,6 +289,32 @@ function buildAssistantContext(): string {
   const recent = movimientos.filter(m => m.motivo !== 'anulacion').slice(0, 5);
   if (recent.length) {
     sections.push(`ULTIMOS MOVIMIENTOS: ${recent.map(m => `${m.tipo} ${m.cantidad} ${m.productoNombre} (${m.motivo})`).join('; ')}`);
+  }
+
+  // CRM / Prospectos
+  const prospectos = getProspectos();
+  if (prospectos.length > 0) {
+    const byEstado: Record<string, number> = {};
+    for (const p of prospectos) { byEstado[p.resultado] = (byEstado[p.resultado] || 0) + 1; }
+    sections.push(`CRM: ${prospectos.length} prospectos — ${Object.entries(byEstado).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+
+    const pendientes = prospectos.filter(p => p.resultado === 'pendiente');
+    if (pendientes.length) {
+      sections.push(`NUNCA CONTACTADOS (pendiente): ${pendientes.map(p => `${p.local} (${p.zona || 'sin zona'})`).join(', ')}`);
+    }
+
+    const seguimientoPendiente = prospectos.filter(p => {
+      if (!p.fechaSeguimiento) return false;
+      return p.fechaSeguimiento.toDate().getTime() <= now;
+    });
+    if (seguimientoPendiente.length) {
+      sections.push(`SEGUIMIENTO VENCIDO: ${seguimientoPendiente.map(p => p.local).join(', ')}`);
+    }
+
+    const clientes = prospectos.filter(p => p.resultado === 'cliente');
+    if (clientes.length) {
+      sections.push(`CLIENTES ACTIVOS: ${clientes.map(p => p.local).join(', ')}`);
+    }
   }
 
   // App guide
