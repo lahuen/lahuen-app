@@ -5,14 +5,14 @@ import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
-import { getProductos, getLotes, getMovimientos, subscribe } from '../lib/store';
+import { getProductos, getLotes, subscribe } from '../lib/store';
 import { computeAllProductMetrics, computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
-import { computeFunnel, type FunnelMetrics } from '../lib/funnel';
-import type { Producto, Lote, Movimiento } from '../lib/types';
+import { computeFunnel } from '../lib/funnel';
+import type { Producto, Lote } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
-  const expandedIds = new Set<string>();
-  let viewMode: 'cards' | 'treemap' = (localStorage.getItem('lahuen_stock_view') as 'cards' | 'treemap') || 'cards';
+  const storedView = localStorage.getItem('lahuen_stock_view');
+  let viewMode: 'list' | 'treemap' = storedView === 'treemap' ? 'treemap' : 'list';
   let treemapCleanup: (() => void) | null = null;
 
   container.innerHTML = `
@@ -72,7 +72,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
           <input type="text" class="search-input" placeholder="Buscar producto..." id="stock-search" />
         </div>
         <div class="view-toggle" id="view-toggle">
-          <button class="view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}" data-view="cards">Cards</button>
+          <button class="view-toggle-btn ${viewMode === 'list' ? 'active' : ''}" data-view="list">Lista</button>
           <button class="view-toggle-btn ${viewMode === 'treemap' ? 'active' : ''}" data-view="treemap">Treemap</button>
         </div>
         <button class="btn btn-primary btn-sm" id="add-product-btn">+ Producto</button>
@@ -120,7 +120,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         </div>
       </div>
 
-      <div class="stock-grid" id="stock-grid">
+      <div class="stock-list" id="stock-grid">
         <div class="empty-state"><p>Cargando...</p></div>
       </div>
     </div>
@@ -175,7 +175,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   document.getElementById('view-toggle')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('[data-view]') as HTMLElement | null;
     if (!btn) return;
-    const newMode = btn.dataset.view as 'cards' | 'treemap';
+    const newMode = btn.dataset.view as 'list' | 'treemap';
     if (newMode === viewMode) return;
     viewMode = newMode;
     localStorage.setItem('lahuen_stock_view', viewMode);
@@ -227,6 +227,8 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }
   });
 
+  let funnelPeriod: '7d' | '30d' = '30d';
+
   // Subscribe to global store
   const unsub = subscribe(refresh, ['productos', 'lotes', 'movimientos']);
   refresh();
@@ -237,13 +239,11 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     if (viewMode === 'treemap') {
       renderTreemapView();
     } else {
-      renderGrid();
+      renderList();
     }
     updateKpis();
     updateFunnel();
   }
-
-  let funnelPeriod: '7d' | '30d' = '30d';
 
   function updateFunnel() {
     const f = computeFunnel(funnelPeriod);
@@ -322,12 +322,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
         if (!b.vencimiento) return -1;
         return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
       });
-  }
-
-  function movimientosForProduct(productoId: string): (Movimiento & { id: string })[] {
-    return getMovimientos()
-      .filter(m => m.productoId === productoId)
-      .slice(0, 5);
   }
 
   function updateKpis() {
@@ -440,17 +434,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }
   }
 
-  function timeAgo(ts: Timestamp): string {
-    const diff = Date.now() - ts.toDate().getTime();
-    const days = Math.floor(diff / 86400000);
-    if (days === 0) return 'hoy';
-    if (days === 1) return 'ayer';
-    if (days < 7) return `hace ${days}d`;
-    if (days < 30) return `hace ${Math.floor(days / 7)}sem`;
-    return formatDate(ts);
-  }
-
-  function renderGrid() {
+  function renderList() {
     const grid = document.getElementById('stock-grid');
     if (!grid) return;
     const allProducts = getProductos();
@@ -478,132 +462,53 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       const isLow = p.cantidad > 0 && p.cantidad < 20;
       const hasExpired = m.expiredLotes > 0;
       const hasExpiring = !hasExpired && m.expiringLotes > 0;
-      const cardAlertCls = hasExpired ? 'stock-card-danger' : hasExpiring ? 'stock-card-warning' : '';
+      const alertCls = hasExpired ? 'stock-row-danger' : hasExpiring ? 'stock-row-warning' : '';
       const alertIcon = hasExpired
         ? '<svg class="card-alert-icon card-alert-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
         : hasExpiring
         ? '<svg class="card-alert-icon card-alert-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
         : '';
-      const isExpanded = expandedIds.has(p.id);
 
-      // Lote health dots
-      const dots = pLotes.map(l => {
-        const health = computeLoteHealth(l);
-        return `<span class="lote-dot lote-dot-${health}" title="${esc(l.numero)}: ${computeDaysRemaining(l.vencimiento) ?? '--'}d"></span>`;
-      }).join('');
-
-      // Velocity / stockout labels
       const velLabel = m.weeklyVelocity > 0 ? `${m.weeklyVelocity}/sem` : '--';
       const stockoutLabel = m.daysToStockout != null ? `~${m.daysToStockout}d` : '--';
 
-      // Expanded content
-      let expandedHtml = '';
-      if (isExpanded) {
-        expandedHtml = renderExpanded(p, pLotes, m);
-      }
+      // Lote sub-rows (always visible)
+      const lotesHtml = pLotes.length > 0 ? pLotes.map((l, i) => {
+        const health = computeLoteHealth(l);
+        const days = computeDaysRemaining(l.vencimiento);
+        const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
+        const isFefo = i === 0;
+        return `<div class="stock-lote-row ${isFefo ? 'stock-lote-fefo' : ''}">
+          <span class="stock-lote-numero">${esc(l.numero)}${isFefo ? ' <span class="badge badge-accent" style="font-size:10px;">FEFO</span>' : ''}</span>
+          <span class="stock-lote-qty">${l.cantidad} ${esc(p.unidad)}</span>
+          <span class="stock-lote-shelf">
+            <span class="shelf-life-bar"><span class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></span></span>
+            <span class="text-xs ${health === 'danger' || health === 'expired' ? 'text-danger' : 'text-secondary'}">${days != null ? (days <= 0 ? 'Vencido' : days + 'd') : 'S/V'}</span>
+          </span>
+          ${l.ubicacion ? `<span class="stock-lote-ubic">${esc(l.ubicacion)}</span>` : ''}
+        </div>`;
+      }).join('') : '';
 
-      return `<div class="stock-card stock-card-compact ${cardAlertCls} ${isExpanded ? 'expanded' : ''}" data-id="${p.id}">
-        <div class="stock-card-header" data-expand="${p.id}">
-          <div class="stock-card-info">
-            <strong>${alertIcon}${esc(p.nombre)}</strong>
-            <span class="text-xs text-secondary">${esc(p.proveedor || '')}</span>
+      return `<div class="stock-row-group ${alertCls}" data-id="${p.id}">
+        <div class="stock-product-row">
+          <div class="stock-product-name">${alertIcon}<strong>${esc(p.nombre)}</strong></div>
+          <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'} stock-product-qty">${p.cantidad} ${esc(p.unidad)}</span>
+          <span class="stock-product-metric">${formatCurrency(m.totalValue)}</span>
+          <span class="stock-product-metric">${velLabel}</span>
+          <span class="stock-product-metric">${stockoutLabel}</span>
+          <div class="stock-product-actions">
+            <button class="btn btn-xs btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+</button>
+            <button class="btn btn-xs btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">-</button>
           </div>
-          <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'}">${p.cantidad} ${esc(p.unidad)}</span>
         </div>
-        <div class="stock-card-metrics" data-expand="${p.id}">
-          <span class="metric">${formatCurrency(m.totalValue)}</span>
-          <span class="metric">${velLabel}</span>
-          <span class="metric">${stockoutLabel}</span>
-          <span class="metric lote-dots">${dots || '<span class="text-tertiary">--</span>'}</span>
-          <svg class="expand-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 18l6-6-6-6"/></svg>
-        </div>
-        ${expandedHtml}
+        ${lotesHtml}
+        <div id="stock-inline-${p.id}" style="display:none;"></div>
       </div>`;
     }).join('');
   }
 
-  function renderExpanded(p: Producto & { id: string }, pLotes: (Lote & { id: string })[], m: { totalValue: number; weeklyVelocity: number; daysToStockout: number | null; lastMovementDate: Date | null; expiringLotes: number; expiredLotes: number }): string {
-    const movs = movimientosForProduct(p.id);
-
-    // Local metrics summary (replaces per-product AI)
-    const metricParts: string[] = [];
-    metricParts.push(`Velocidad: ${m.weeklyVelocity > 0 ? m.weeklyVelocity + '/sem' : '--'}`);
-    if (m.daysToStockout != null) metricParts.push(`Stock para ~${m.daysToStockout}d`);
-    else if (p.cantidad === 0) metricParts.push('Sin stock');
-    if (m.expiringLotes > 0) metricParts.push(`${m.expiringLotes} lote(s) por vencer`);
-    if (m.expiredLotes > 0) metricParts.push(`${m.expiredLotes} vencido(s)`);
-    if (m.lastMovementDate) {
-      const daysAgo = Math.floor((Date.now() - m.lastMovementDate.getTime()) / 86400000);
-      metricParts.push(`Ultimo mov: ${daysAgo === 0 ? 'hoy' : daysAgo === 1 ? 'ayer' : 'hace ' + daysAgo + 'd'}`);
-    }
-    metricParts.push(`Valor: ${formatCurrency(m.totalValue)}`);
-
-    // Lotes section
-    const lotesHtml = pLotes.length > 0 ? pLotes.map((l, i) => {
-      const health = computeLoteHealth(l);
-      const days = computeDaysRemaining(l.vencimiento);
-      const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
-      const isFefo = i === 0;
-      return `<div class="lote-detail ${isFefo ? 'lote-fefo' : ''}">
-        <div class="lote-detail-header">
-          <span class="lote-numero">${esc(l.numero)}</span>
-          ${isFefo ? '<span class="badge badge-accent" style="font-size:10px;">FEFO</span>' : ''}
-          <span class="lote-qty">${l.cantidad} uds</span>
-          ${l.ubicacion ? `<span class="lote-ubic">${esc(l.ubicacion)}</span>` : ''}
-        </div>
-        <div class="lote-shelf-life">
-          <div class="shelf-life-bar"><div class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></div></div>
-          <span class="text-xs ${health === 'danger' || health === 'expired' ? 'text-danger' : 'text-secondary'}">${days != null ? (days <= 0 ? 'Vencido' : days + 'd') : 'Sin venc.'}</span>
-        </div>
-      </div>`;
-    }).join('') : '<p class="text-xs text-tertiary">Sin lotes activos</p>';
-
-    // Recent movements
-    const movsHtml = movs.length > 0 ? movs.map(mv => {
-      const tipoCls = mv.tipo === 'entrada' ? 'badge-success' : 'badge-danger';
-      return `<div class="mini-mov">
-        <span class="badge ${tipoCls}" style="font-size:10px;padding:1px 6px;">${mv.tipo === 'entrada' ? '+' : '-'}</span>
-        <span>${mv.cantidad}</span>
-        <span class="text-secondary">${esc(mv.motivo)}</span>
-        <span class="text-xs text-tertiary" style="margin-left:auto;">${timeAgo(mv.fecha)}</span>
-      </div>`;
-    }).join('') : '<p class="text-xs text-tertiary">Sin movimientos</p>';
-
-    return `<div class="stock-card-expanded">
-      <div class="product-metrics-summary">${metricParts.join(' · ')}</div>
-      <div class="expanded-section">
-        <h4>Lotes (${pLotes.length})</h4>
-        ${lotesHtml}
-      </div>
-      <div class="expanded-section">
-        <h4>Ultimos movimientos</h4>
-        ${movsHtml}
-      </div>
-      <div class="expanded-actions">
-        <button class="btn btn-sm btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+ Entrada</button>
-        <button class="btn btn-sm btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">- Salida</button>
-      </div>
-      <div id="stock-inline-${p.id}" style="display:none;margin-top:var(--sp-3);"></div>
-    </div>`;
-  }
-
   function handleGridClick(e: Event) {
     const target = e.target as HTMLElement;
-
-    // Expand/collapse
-    const expandBtn = target.closest('[data-expand]') as HTMLElement | null;
-    if (expandBtn && !target.closest('button') && !target.closest('input') && !target.closest('select')) {
-      const pid = expandBtn.dataset.expand!;
-      if (expandedIds.has(pid)) {
-        expandedIds.delete(pid);
-      } else {
-        expandedIds.add(pid);
-      }
-      renderGrid();
-      return;
-    }
-
-    // Stock actions (entrada/salida)
     const actionBtn = target.closest('[data-stock-action]') as HTMLElement | null;
     if (!actionBtn) return;
     const action = actionBtn.dataset.stockAction as 'entrada' | 'salida';
@@ -674,6 +579,8 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     }
 
     inlineContainer.style.display = '';
+    inlineContainer.style.padding = 'var(--sp-2) var(--sp-4) var(--sp-3)';
+    inlineContainer.style.borderTop = '1px solid var(--color-border)';
 
     document.getElementById(`inline-cancel-${productoId}`)!.addEventListener('click', () => {
       inlineContainer.style.display = 'none';
