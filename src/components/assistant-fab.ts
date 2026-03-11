@@ -1,6 +1,6 @@
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
-import { parseSmartInput, type SmartAction } from '../lib/gemini';
+import { parseSmartInput, askAssistant, type SmartAction } from '../lib/gemini';
 import { findBestProspectMatch } from '../lib/fuzzy-match';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
 import { getProductos, getProspectos, getLotes } from '../lib/store';
@@ -175,7 +175,16 @@ export function renderAssistantFab(container: HTMLElement): void {
     }
 
     if (result.action === 'consulta') {
-      addBot(answerQuery(result.query));
+      // Use AI-powered contextual answer
+      thinking = true;
+      renderMessages();
+      askAssistant(result.query).then(answer => {
+        thinking = false;
+        addBot(answer);
+      }).catch(() => {
+        thinking = false;
+        addBot(answerQuery(result.query)); // fallback to local
+      });
       return;
     }
 

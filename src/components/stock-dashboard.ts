@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
 import { getProductos, getLotes, getMovimientos, subscribe } from '../lib/store';
 import { computeAllProductMetrics, computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
+import { computeFunnel, type FunnelMetrics } from '../lib/funnel';
 import type { Producto, Lote, Movimiento } from '../lib/types';
 
 export function renderStockDashboard(container: HTMLElement): (() => void) | null {
@@ -43,6 +44,25 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
           <div id="report-content">
             <div class="insight-skeleton"></div>
           </div>
+        </div>
+      </div>
+
+      <div class="funnel-strip" id="funnel-panel">
+        <div class="funnel-strip-header" id="funnel-header">
+          <div style="display:flex;align-items:center;gap:var(--sp-2);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 2L2 2l8 9.46V18l4 2V11.46L22 2z"/></svg>
+            <span class="funnel-strip-label">Funnel</span>
+            <span class="funnel-period-toggle" id="funnel-period">
+              <button class="funnel-period-btn active" data-period="30d">30d</button>
+              <button class="funnel-period-btn" data-period="7d">7d</button>
+            </span>
+            <span id="funnel-summary" class="text-xs text-secondary"></span>
+          </div>
+          <svg class="funnel-strip-chevron" id="funnel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="funnel-strip-body" id="funnel-body" style="display:none;">
+          <div id="funnel-bar"></div>
+          <div id="funnel-details"></div>
         </div>
       </div>
 
@@ -183,6 +203,30 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     });
   });
 
+  // Funnel toggle
+  document.getElementById('funnel-header')!.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.funnel-period-btn')) return;
+    const body = document.getElementById('funnel-body')!;
+    const panel = document.getElementById('funnel-panel')!;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : '';
+    panel.classList.toggle('funnel-strip-open', !isOpen);
+  });
+
+  document.getElementById('funnel-period')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.funnel-period-btn') as HTMLElement | null;
+    if (!btn) return;
+    funnelPeriod = btn.dataset.period as '7d' | '30d';
+    document.querySelectorAll('.funnel-period-btn').forEach(b => b.classList.toggle('active', b === btn));
+    updateFunnel();
+    // Auto-expand if collapsed
+    const body = document.getElementById('funnel-body')!;
+    if (body.style.display === 'none') {
+      body.style.display = '';
+      document.getElementById('funnel-panel')!.classList.add('funnel-strip-open');
+    }
+  });
+
   // Subscribe to global store
   const unsub = subscribe(refresh, ['productos', 'lotes', 'movimientos']);
   refresh();
@@ -196,6 +240,60 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       renderGrid();
     }
     updateKpis();
+    updateFunnel();
+  }
+
+  let funnelPeriod: '7d' | '30d' = '30d';
+
+  function updateFunnel() {
+    const f = computeFunnel(funnelPeriod);
+    const summaryEl = document.getElementById('funnel-summary');
+    if (summaryEl) {
+      summaryEl.textContent = `Entradas: ${f.totalEntradas} · Ventas: ${f.ventas} (${f.ventaPct}%) · Merma: ${f.merma} (${f.perdidaPct}%)`;
+    }
+
+    const barEl = document.getElementById('funnel-bar');
+    if (barEl) {
+      const total = f.totalEntradas || 1;
+      const ventaW = Math.round(f.ventas / total * 100);
+      const mermaW = Math.round(f.merma / total * 100);
+      const ajusteW = Math.round(f.ajustesSalida / total * 100);
+      const restW = Math.max(0, 100 - ventaW - mermaW - ajusteW);
+      barEl.innerHTML = `
+        <div class="funnel-bar">
+          ${ventaW > 0 ? `<div class="funnel-seg funnel-ventas" style="width:${ventaW}%" title="Ventas ${f.ventas}"></div>` : ''}
+          ${mermaW > 0 ? `<div class="funnel-seg funnel-merma" style="width:${mermaW}%" title="Merma ${f.merma}"></div>` : ''}
+          ${ajusteW > 0 ? `<div class="funnel-seg funnel-ajuste" style="width:${ajusteW}%" title="Ajustes ${f.ajustesSalida}"></div>` : ''}
+          ${restW > 0 ? `<div class="funnel-seg funnel-stock" style="width:${restW}%" title="Stock restante"></div>` : ''}
+        </div>
+        <div class="funnel-legend">
+          <span class="funnel-legend-item"><span class="funnel-dot funnel-ventas"></span>Ventas ${ventaW}%</span>
+          <span class="funnel-legend-item"><span class="funnel-dot funnel-merma"></span>Merma ${mermaW}%</span>
+          ${ajusteW > 0 ? `<span class="funnel-legend-item"><span class="funnel-dot funnel-ajuste"></span>Ajustes ${ajusteW}%</span>` : ''}
+          <span class="funnel-legend-item"><span class="funnel-dot funnel-stock"></span>Stock ${restW}%</span>
+        </div>`;
+    }
+
+    const detailsEl = document.getElementById('funnel-details');
+    if (detailsEl) {
+      let html = `<div class="funnel-metrics">
+        <div><span class="text-secondary text-xs">Produccion</span><br><strong>${f.produccion}</strong></div>
+        <div><span class="text-secondary text-xs">Compras</span><br><strong>${f.compras}</strong></div>
+        <div><span class="text-secondary text-xs">Ventas</span><br><strong>${f.ventas}</strong></div>
+        <div><span class="text-secondary text-xs">Revenue</span><br><strong>${formatCurrency(f.ventasRevenue)}</strong></div>
+        <div><span class="text-secondary text-xs">Merma</span><br><strong class="text-danger">${f.merma}</strong></div>
+      </div>`;
+      if (f.topLoss.length > 0) {
+        html += `<div style="margin-top:var(--sp-3);">
+          <p class="text-xs text-secondary" style="margin-bottom:var(--sp-1);">Mayor perdida</p>
+          ${f.topLoss.map(p => `<div class="funnel-loss-row">
+            <span>${esc(p.nombre)}</span>
+            <span class="text-danger text-xs">${p.merma} perdidos (${p.pct}%)</span>
+          </div>`).join('')}
+        </div>`;
+      }
+      detailsEl.innerHTML = html;
+    }
   }
 
   function renderTreemapView() {

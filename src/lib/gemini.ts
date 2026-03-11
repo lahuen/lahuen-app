@@ -1,6 +1,7 @@
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { app } from './firebase';
-import { getProductos } from './store';
+import { getProductos, getLotes, getMovimientos } from './store';
+import { computeFunnel } from './funnel';
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 const model = getGenerativeModel(ai, { model: 'gemini-2.5-flash' });
@@ -231,4 +232,91 @@ function detectPerfil(text: string): string {
     if (text.includes(p)) return p;
   }
   return 'otro';
+}
+
+// ── Contextual Assistant ──────────────────────────────────────────────────
+
+function buildAssistantContext(): string {
+  const productos = getProductos();
+  const lotes = getLotes();
+  const movimientos = getMovimientos();
+  const funnel = computeFunnel('30d');
+  const now = Date.now();
+  const weekFromNow = now + 7 * 86400000;
+
+  const sections: string[] = [];
+
+  // Stock summary
+  const total = productos.reduce((s, p) => s + p.cantidad, 0);
+  const value = productos.reduce((s, p) => s + p.cantidad * p.precio, 0);
+  sections.push(`STOCK: ${productos.length} productos, ${total} unidades, valor $${Math.round(value)}`);
+
+  const zero = productos.filter(p => p.cantidad === 0);
+  if (zero.length) sections.push(`SIN STOCK: ${zero.map(p => p.nombre).join(', ')}`);
+
+  const low = productos.filter(p => p.cantidad > 0 && p.cantidad < 20);
+  if (low.length) sections.push(`STOCK BAJO: ${low.map(p => `${p.nombre}(${p.cantidad})`).join(', ')}`);
+
+  // Expiring
+  const expiring = lotes.filter(l =>
+    l.cantidad > 0 && l.vencimiento && l.vencimiento.toDate().getTime() <= weekFromNow && l.vencimiento.toDate().getTime() > now
+  );
+  if (expiring.length) {
+    sections.push(`POR VENCER (7d): ${expiring.map(l => {
+      const days = Math.ceil((l.vencimiento!.toDate().getTime() - now) / 86400000);
+      return `${l.productoNombre} lote ${l.numero} en ${days}d`;
+    }).join(', ')}`);
+  }
+
+  // Funnel
+  sections.push(`FUNNEL 30d: Produccion ${funnel.produccion}, Compras ${funnel.compras}, Ventas ${funnel.ventas} (${funnel.ventaPct}%), Merma ${funnel.merma} (${funnel.perdidaPct}%), Revenue $${Math.round(funnel.ventasRevenue)}`);
+  if (funnel.topLoss.length) {
+    sections.push(`MAYOR PERDIDA: ${funnel.topLoss.map(p => `${p.nombre} ${p.pct}%`).join(', ')}`);
+  }
+
+  // Recent movements (last 5)
+  const recent = movimientos.filter(m => m.motivo !== 'anulacion').slice(0, 5);
+  if (recent.length) {
+    sections.push(`ULTIMOS MOVIMIENTOS: ${recent.map(m => `${m.tipo} ${m.cantidad} ${m.productoNombre} (${m.motivo})`).join('; ')}`);
+  }
+
+  // App guide
+  sections.push(`GUIA DE USO:
+- Stock: ver productos, KPIs, treemap. Boton "+ Producto" para crear.
+- Movimientos: historial de entradas/salidas, buscar, anular operaciones.
+- Lotes: seguimiento de lotes por producto con vencimiento y ubicacion.
+- CRM: prospectos comerciales, seguimiento, estado (frio/templado/caliente/cerrado/perdido).
+- Agenda: timeline de seguimientos y visitas pendientes.
+- Asistente: registrar movimientos en lenguaje natural (ej: "cosechamos 200 lechuga", "venta 50 rucula a El Roble").
+- Para registrar una entrada: decir "cosechamos X de [producto]" o "entraron X [producto]".
+- Para registrar una venta: decir "vendimos X [producto] a [cliente]".
+- Para registrar merma: decir "tiramos X [producto]" o "merma X [producto]".
+- Para crear prospecto: decir "nuevo prospecto [nombre] contacto [persona] zona [zona]".`);
+
+  return sections.join('\n');
+}
+
+export async function askAssistant(question: string): Promise<string> {
+  if (!checkRateLimit()) {
+    return 'Limite de consultas alcanzado. Intenta mas tarde.';
+  }
+
+  const context = buildAssistantContext();
+  const systemPrompt = `Sos el asistente de Lahuen CRM, una cooperativa hidroponera argentina.
+Responde preguntas sobre stock, operaciones, como usar la app, y analisis del negocio.
+Usa los datos provistos abajo. Responde breve, en argentino, maximo 3-4 oraciones.
+Si te preguntan algo que no sabes, decilo.
+
+DATOS ACTUALES:
+${context}`;
+
+  try {
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nPregunta: "${question}"` }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
+    });
+    return result.response.text().trim();
+  } catch {
+    return 'Error al consultar. Intenta de nuevo.';
+  }
 }

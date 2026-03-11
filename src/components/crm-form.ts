@@ -16,6 +16,7 @@ export function renderCrmForm(container: HTMLElement, prospectoId?: string): (()
   container.innerHTML = `
     <div class="page-narrow">
       <div style="margin-bottom:var(--sp-6); margin-top:var(--sp-4);">
+        <a href="#crm" class="back-link">&larr; Volver</a>
         <h1 class="text-title" id="form-title">${isEdit ? 'Editar prospecto' : 'Nuevo prospecto'}</h1>
         <p class="text-secondary" style="font-size:var(--text-sm);margin-top:2px;">Registra un local o contacto comercial.</p>
       </div>
