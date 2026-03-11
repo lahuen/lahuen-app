@@ -5,6 +5,7 @@ import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
+import { showQrPagoModal } from '../lib/qr-pago';
 import { getProductos, getLotes, subscribe } from '../lib/store';
 import { computeAllProductMetrics, computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
 import { computeFunnel } from '../lib/funnel';
@@ -512,10 +513,10 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
     grid.innerHTML = `<table class="stk-table">
       <thead><tr>
         <th>Producto</th>
-        <th>Cant.</th>
-        <th>Valor</th>
-        <th class="stk-col-extra">Vel.</th>
-        <th class="stk-col-extra">Agota</th>
+        <th class="stk-td-qty">Cant.</th>
+        <th class="stk-td-num">Valor</th>
+        <th class="stk-td-num stk-col-extra">Vel.</th>
+        <th class="stk-td-num stk-col-extra">Agota</th>
         <th>Lotes</th>
         <th></th>
       </tr></thead>
@@ -644,6 +645,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
           if (motivo === 'venta') {
             await recordSale(productoId, productoNombre, qty, undefined, undefined, undefined, selectedLoteId);
+            showQrPagoModal();
           } else {
             await recordStockExit(productoId, productoNombre, qty, motivo as 'merma' | 'ajuste', selectedLoteId);
           }

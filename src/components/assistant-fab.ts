@@ -3,6 +3,7 @@ import { showToast } from '../lib/toast';
 import { parseSmartInput, askAssistant, type SmartAction } from '../lib/gemini';
 import { findBestProspectMatch } from '../lib/fuzzy-match';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
+import { showQrPagoModal } from '../lib/qr-pago';
 import { getProductos, getProspectos, getLotes } from '../lib/store';
 import { computeProductMetrics } from '../lib/stock-metrics';
 
@@ -11,6 +12,8 @@ interface ChatMsg { role: 'user' | 'bot'; text: string }
 // Module-level state — persists across hash navigations
 const history: ChatMsg[] = [];
 let pendingConfirm: (() => Promise<void>) | null = null;
+let pendingIsVenta = false;
+let pendingVentaPrecio: number | undefined = undefined;
 let thinking = false;
 
 export function renderAssistantFab(container: HTMLElement): void {
@@ -84,13 +87,18 @@ export function renderAssistantFab(container: HTMLElement): void {
     const target = e.target as HTMLElement;
     if (target.closest('#chat-confirm') && pendingConfirm) {
       const fn = pendingConfirm;
+      const isVenta = pendingIsVenta;
+      const ventaPrecio = pendingVentaPrecio;
       pendingConfirm = null;
+      pendingIsVenta = false;
+      pendingVentaPrecio = undefined;
       addBot('Guardando...');
       try {
         await fn();
         history[history.length - 1].text = 'Listo!';
         renderMessages();
         showToast('Operacion registrada', 'success');
+        if (isVenta) showQrPagoModal(ventaPrecio);
       } catch (err) {
         history[history.length - 1].text = 'Error: ' + (err instanceof Error ? err.message : 'desconocido');
         renderMessages();
@@ -160,6 +168,8 @@ export function renderAssistantFab(container: HTMLElement): void {
       }
       const prospectoLabel = prospectoLocal ? ` → ${prospectoLocal}` : (result.prospecto ? ` ("${result.prospecto}" no encontrado)` : '');
       addBot(`Venta: ${result.cantidad} ${result.unidad} de ${producto.nombre}${prospectoLabel}`);
+      pendingIsVenta = true;
+      pendingVentaPrecio = result.precio ?? undefined;
       pendingConfirm = () => recordSale(producto.id!, producto.nombre, result.cantidad, prospectoId, prospectoLocal, result.precio ?? undefined);
       renderMessages();
       return;

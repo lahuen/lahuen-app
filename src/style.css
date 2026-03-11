@@ -524,6 +524,12 @@ tbody tr:hover { background: var(--color-accent-muted); }
 .modal-body { display: flex; flex-direction: column; gap: var(--sp-4); margin-bottom: var(--sp-5); }
 .modal-footer { display: flex; gap: var(--sp-3); justify-content: flex-end; }
 
+/* ── QR Pago Modal ─────────────────────────────────────────────────────── */
+.qr-pago-img { display: block; margin: var(--sp-4) auto; max-width: 220px; border-radius: var(--radius-md); }
+.qr-pago-monto { font-size: var(--text-lg); color: var(--color-text); margin: var(--sp-2) 0; }
+.qr-pago-alias { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); font-family: monospace; font-size: var(--text-lg); font-weight: var(--weight-semi); margin: var(--sp-2) 0; }
+.qr-pago-info { font-size: var(--text-xs); color: var(--color-text-secondary); margin: var(--sp-2) 0 var(--sp-4); }
+
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
 
@@ -622,12 +628,12 @@ tbody tr:hover { background: var(--color-accent-muted); }
   letter-spacing: .3px;
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 2px solid var(--color-border);
-  text-align: left;
   white-space: nowrap;
   position: sticky;
   top: 0;
   background: var(--color-surface);
 }
+.stk-table thead th:first-child { text-align: left; }
 .stk-table tbody tr { border-bottom: 1px solid var(--color-border); }
 .stk-table tbody tr:last-child { border-bottom: none; }
 .stk-table tbody tr:hover { background: var(--color-bg); }
@@ -641,10 +647,10 @@ tr.stk-row-danger td:first-child { box-shadow: inset 3px 0 0 var(--color-danger)
 tr.stk-row-warning td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
 
 /* Column styles */
-.stk-td-name { font-weight: var(--weight-medium); white-space: nowrap; }
+.stk-td-name { font-weight: var(--weight-medium); white-space: nowrap; text-align: left; }
 .stk-td-qty { text-align: center; }
 .stk-td-num { text-align: right; font-size: var(--text-xs); color: var(--color-secondary); white-space: nowrap; }
-.stk-td-lotes { min-width: 140px; }
+.stk-td-lotes { min-width: 140px; text-align: left; }
 .stk-td-actions { white-space: nowrap; text-align: right; }
 
 .btn-xs {
