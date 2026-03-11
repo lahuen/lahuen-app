@@ -455,56 +455,72 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
     const metricsMap = computeAllProductMetrics();
 
-    grid.innerHTML = filtered.map(p => {
+    const rows = filtered.map(p => {
       const m = metricsMap.get(p.id) || { totalValue: 0, weeklyVelocity: 0, daysToStockout: null, lastMovementDate: null, activeLotes: 0, expiringLotes: 0, expiredLotes: 0 };
       const pLotes = lotesForProduct(p.id);
       const isZero = p.cantidad === 0;
       const isLow = p.cantidad > 0 && p.cantidad < 20;
       const hasExpired = m.expiredLotes > 0;
       const hasExpiring = !hasExpired && m.expiringLotes > 0;
-      const alertCls = hasExpired ? 'stock-row-danger' : hasExpiring ? 'stock-row-warning' : '';
+      const rowCls = hasExpired ? 'stk-row-danger' : hasExpiring ? 'stk-row-warning' : '';
       const alertIcon = hasExpired
-        ? '<svg class="card-alert-icon card-alert-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+        ? '<svg class="card-alert-icon card-alert-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> '
         : hasExpiring
-        ? '<svg class="card-alert-icon card-alert-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+        ? '<svg class="card-alert-icon card-alert-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> '
         : '';
 
       const velLabel = m.weeklyVelocity > 0 ? `${m.weeklyVelocity}/sem` : '--';
       const stockoutLabel = m.daysToStockout != null ? `~${m.daysToStockout}d` : '--';
 
-      // Lote sub-rows (always visible)
-      const lotesHtml = pLotes.length > 0 ? pLotes.map((l, i) => {
-        const health = computeLoteHealth(l);
-        const days = computeDaysRemaining(l.vencimiento);
-        const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
-        const isFefo = i === 0;
-        return `<div class="stock-lote-row ${isFefo ? 'stock-lote-fefo' : ''}">
-          <span class="stock-lote-numero">${esc(l.numero)}${isFefo ? ' <span class="badge badge-accent" style="font-size:10px;">FEFO</span>' : ''}</span>
-          <span class="stock-lote-qty">${l.cantidad} ${esc(p.unidad)}</span>
-          <span class="stock-lote-shelf">
-            <span class="shelf-life-bar"><span class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></span></span>
-            <span class="text-xs ${health === 'danger' || health === 'expired' ? 'text-danger' : 'text-secondary'}">${days != null ? (days <= 0 ? 'Vencido' : days + 'd') : 'S/V'}</span>
-          </span>
-          ${l.ubicacion ? `<span class="stock-lote-ubic">${esc(l.ubicacion)}</span>` : ''}
-        </div>`;
-      }).join('') : '';
+      // Lote cell: compact inline lotes
+      let lotesCell = '--';
+      if (pLotes.length > 0) {
+        lotesCell = pLotes.map((l, i) => {
+          const health = computeLoteHealth(l);
+          const days = computeDaysRemaining(l.vencimiento);
+          const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
+          const isFefo = i === 0;
+          const daysLabel = days != null ? (days <= 0 ? 'Venc' : days + 'd') : 'S/V';
+          const dangerCls = health === 'danger' || health === 'expired' ? ' text-danger' : '';
+          return `<div class="stk-lote ${isFefo ? 'stk-lote-fefo' : ''}">
+            <span class="stk-lote-id">${esc(l.numero)}</span>
+            <span>${l.cantidad}</span>
+            <span class="stk-lote-bar"><span class="shelf-life-bar"><span class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></span></span></span>
+            <span class="${dangerCls}">${daysLabel}</span>
+          </div>`;
+        }).join('');
+      }
 
-      return `<div class="stock-row-group ${alertCls}" data-id="${p.id}">
-        <div class="stock-product-row">
-          <div class="stock-product-name">${alertIcon}<strong>${esc(p.nombre)}</strong></div>
-          <span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'} stock-product-qty">${p.cantidad} ${esc(p.unidad)}</span>
-          <span class="stock-product-metric">${formatCurrency(m.totalValue)}</span>
-          <span class="stock-product-metric">${velLabel}</span>
-          <span class="stock-product-metric">${stockoutLabel}</span>
-          <div class="stock-product-actions">
-            <button class="btn btn-xs btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}">+</button>
-            <button class="btn btn-xs btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}">-</button>
-          </div>
-        </div>
-        ${lotesHtml}
-        <div id="stock-inline-${p.id}" style="display:none;"></div>
-      </div>`;
+      // Product row + inline form placeholder
+      return `<tr class="${rowCls}" data-id="${p.id}">
+          <td class="stk-td-name">${alertIcon}${esc(p.nombre)}</td>
+          <td class="stk-td-qty"><span class="badge ${isZero ? 'badge-danger' : isLow ? 'badge-warning' : 'badge-success'}">${p.cantidad}</span></td>
+          <td class="stk-td-num">${formatCurrency(m.totalValue)}</td>
+          <td class="stk-td-num stk-col-extra">${velLabel}</td>
+          <td class="stk-td-num stk-col-extra">${stockoutLabel}</td>
+          <td class="stk-td-lotes">${lotesCell}</td>
+          <td class="stk-td-actions">
+            <button class="btn btn-xs btn-primary" data-stock-action="entrada" data-id="${p.id}" data-name="${esc(p.nombre)}" title="Entrada">+</button>
+            <button class="btn btn-xs btn-secondary" data-stock-action="salida" data-id="${p.id}" data-name="${esc(p.nombre)}" title="Salida">&minus;</button>
+          </td>
+        </tr>
+        <tr class="stk-inline-row" id="stock-inline-row-${p.id}" style="display:none;">
+          <td colspan="7"><div id="stock-inline-${p.id}"></div></td>
+        </tr>`;
     }).join('');
+
+    grid.innerHTML = `<table class="stk-table">
+      <thead><tr>
+        <th>Producto</th>
+        <th>Cant.</th>
+        <th>Valor</th>
+        <th class="stk-col-extra">Vel.</th>
+        <th class="stk-col-extra">Agota</th>
+        <th>Lotes</th>
+        <th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   }
 
   function handleGridClick(e: Event) {
@@ -518,11 +534,14 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   }
 
   function showInlineForm(productoId: string, productoNombre: string, tipo: 'entrada' | 'salida') {
-    document.querySelectorAll('[id^="stock-inline-"]').forEach(el => {
+    // Hide all open inline forms
+    document.querySelectorAll('.stk-inline-row').forEach(el => {
       (el as HTMLElement).style.display = 'none';
-      (el as HTMLElement).innerHTML = '';
+      const inner = el.querySelector('[id^="stock-inline-"]') as HTMLElement | null;
+      if (inner) inner.innerHTML = '';
     });
 
+    const inlineRow = document.getElementById(`stock-inline-row-${productoId}`);
     const inlineContainer = document.getElementById(`stock-inline-${productoId}`)!;
 
     if (tipo === 'entrada') {
@@ -578,12 +597,11 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       `;
     }
 
-    inlineContainer.style.display = '';
-    inlineContainer.style.padding = 'var(--sp-2) var(--sp-4) var(--sp-3)';
-    inlineContainer.style.borderTop = '1px solid var(--color-border)';
+    if (inlineRow) inlineRow.style.display = '';
+    inlineContainer.style.padding = 'var(--sp-3)';
 
     document.getElementById(`inline-cancel-${productoId}`)!.addEventListener('click', () => {
-      inlineContainer.style.display = 'none';
+      if (inlineRow) inlineRow.style.display = 'none';
       inlineContainer.innerHTML = '';
     });
 
