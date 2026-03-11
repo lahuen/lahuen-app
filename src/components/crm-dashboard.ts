@@ -34,6 +34,7 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
         <select class="filter-select" id="crm-filter-vendedor">
           <option value="">Todos los vendedores</option>
         </select>
+        <a href="#nuevo" class="btn btn-primary btn-sm">+ Prospecto</a>
         <span id="crm-count" class="badge badge-neutral">-- prospectos</span>
       </div>
 

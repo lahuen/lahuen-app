@@ -85,7 +85,6 @@ function renderLayout() {
         <a class="tab" href="#lotes" data-tab="#lotes">Lotes</a>
         <a class="tab" href="#crm" data-tab="#crm">CRM</a>
         <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
-        <a class="tab" href="#nuevo" data-tab="#nuevo">Nuevo</a>
         ${currentRole === 'admin' ? `<a class="tab" href="#audit" data-tab="#audit">Audit</a>` : ''}
       </nav>
       <div class="nav-user">
@@ -99,10 +98,10 @@ function renderLayout() {
         </button>
       </div>
     </header>
-    <div id="smart-input-container"></div>
     <main class="content" id="view">
       <div class="empty-state"><p>Cargando...</p></div>
     </main>
+    <div id="assistant-container"></div>
   `;
 
   document.getElementById('logout-btn')!.addEventListener('click', () => signOut(auth));
@@ -130,9 +129,9 @@ function renderLayout() {
     }
   });
 
-  // Smart input bar
-  const smartContainer = document.getElementById('smart-input-container')!;
-  import('./components/smart-input').then(({ renderSmartInput }) => renderSmartInput(smartContainer)).catch(() => {});
+  // Assistant FAB (async, non-blocking)
+  const assistantContainer = document.getElementById('assistant-container')!;
+  import('./components/assistant-fab').then(({ renderAssistantFab }) => renderAssistantFab(assistantContainer)).catch(() => {});
 
 }
 
