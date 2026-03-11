@@ -27,7 +27,7 @@ Hay 5 acciones posibles:
 2. "stock_salida" - Registrar salida/merma/descarte. Ejemplo: "tiramos 10 lechugas", "merma 5 albahaca", "descartamos 20 rucula"
 3. "venta" - Registrar una venta (descuenta stock). Ejemplo: "se vendieron 50 atados de rucula a Restaurant El Roble"
 4. "nuevo_prospecto" - Agregar prospecto al CRM. Ejemplo: "agregar prospecto Bar La Luna zona Moreno contacto Juan 1155667788"
-5. "consulta" - Consulta sobre stock, vencimientos, productos. Ejemplo: "cuanto stock tengo de lechuga?", "que vence esta semana?"
+5. "consulta" - Cualquier pregunta, consulta o pedido de ayuda. Incluye preguntas sobre stock, vencimientos, como usar la app, que hace cada seccion, ayuda general, analisis del negocio. Ejemplos: "cuanto stock tengo de lechuga?", "que vence esta semana?", "como se usa la app?", "que es el CRM?", "como registro una venta?", "ayuda"
 
 Productos conocidos: ${productList}.
 Unidades comunes: bandejas, atados, kg, unidades.
@@ -50,7 +50,9 @@ Para nuevo_prospecto:
 Para consulta:
 {"action":"consulta","query":"la consulta del usuario"}
 
-Si no podes determinar la accion o faltan datos criticos:
+IMPORTANTE: Si no es claramente una de las primeras 4 acciones, usa "consulta". Ante la duda, clasifica como "consulta".
+
+Si realmente no podes interpretar nada:
 {"action":"error","message":"descripcion del problema"}`;
 }
 
@@ -106,7 +108,11 @@ const ENTRADA_KEYWORDS = ['stock', 'cosecha', 'cosechamos', 'entraron', 'llegaro
 const SALIDA_KEYWORDS = ['tiramos', 'tiraron', 'merma', 'descartamos', 'descarte', 'perdimos', 'se pudrio', 'pudrieron', 'basura'];
 const VENTA_KEYWORDS = ['vendi', 'vendio', 'vendimos', 'venta', 'entrego', 'llevo', 'despacho', 'vendieron'];
 const PROSPECTO_KEYWORDS = ['prospecto', 'nuevo prospecto', 'agregar prospecto', 'nuevo cliente', 'agregar cliente'];
-const CONSULTA_KEYWORDS = ['cuanto', 'cuantos', 'cuantas', 'que vence', 'que tengo', 'hay stock', 'stock de', 'tenemos de', 'queda de', 'cuanto hay'];
+const CONSULTA_KEYWORDS = [
+  'cuanto', 'cuantos', 'cuantas', 'que vence', 'que tengo', 'hay stock', 'stock de', 'tenemos de', 'queda de', 'cuanto hay',
+  'como se', 'como hago', 'como registro', 'como cargo', 'como funciona', 'para que', 'que es', 'que hace', 'explicame',
+  'ayuda', 'help', 'como uso', 'como navego', 'donde esta', 'donde encuentro', 'que puedo', 'como puedo',
+];
 
 function buildProductMap(): Record<string, string> {
   const productos = getProductos();
@@ -154,7 +160,10 @@ function localParse(input: string): SmartAction {
   else if (ENTRADA_KEYWORDS.some(k => lower.includes(k))) actionType = 'stock_entrada';
 
   if (!actionType) {
-    return { action: 'error', message: 'No pude entender la accion. Proba con "stock", "venta", "merma", "cuanto..." o "prospecto".' };
+    // If no number detected, treat as a general question/consulta
+    const hasNumber = /\d+/.test(lower);
+    if (!hasNumber) return { action: 'consulta', query: input.trim() };
+    return { action: 'error', message: 'No pude entender la accion. Proba con "cosechamos X de...", "vendimos X a...", "merma X de...", o pregunta algo.' };
   }
 
   if (actionType === 'consulta') {
