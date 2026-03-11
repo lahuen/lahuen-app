@@ -5,7 +5,6 @@ import { showToast } from '../lib/toast';
 import { logAudit } from '../lib/audit';
 import { formatCurrency, formatDate } from '../lib/format';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
-import { showQrPagoModal } from '../lib/qr-pago';
 import { getProductos, getLotes, subscribe } from '../lib/store';
 import { computeAllProductMetrics, computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
 import { computeFunnel } from '../lib/funnel';
@@ -645,7 +644,7 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
 
           if (motivo === 'venta') {
             await recordSale(productoId, productoNombre, qty, undefined, undefined, undefined, selectedLoteId);
-            showQrPagoModal();
+            import('../lib/qr-pago').then(m => m.showQrPagoModal()).catch(() => {});
           } else {
             await recordStockExit(productoId, productoNombre, qty, motivo as 'merma' | 'ajuste', selectedLoteId);
           }

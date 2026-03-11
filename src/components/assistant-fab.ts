@@ -3,7 +3,6 @@ import { showToast } from '../lib/toast';
 import { parseSmartInput, askAssistant, type SmartAction } from '../lib/gemini';
 import { findBestProspectMatch } from '../lib/fuzzy-match';
 import { recordStockEntry, recordStockExit, recordSale } from '../lib/stock';
-import { showQrPagoModal } from '../lib/qr-pago';
 import { getProductos, getProspectos, getLotes } from '../lib/store';
 import { computeProductMetrics } from '../lib/stock-metrics';
 
@@ -98,7 +97,7 @@ export function renderAssistantFab(container: HTMLElement): void {
         history[history.length - 1].text = 'Listo!';
         renderMessages();
         showToast('Operacion registrada', 'success');
-        if (isVenta) showQrPagoModal(ventaPrecio);
+        if (isVenta) import('../lib/qr-pago').then(m => m.showQrPagoModal(ventaPrecio)).catch(() => {});
       } catch (err) {
         history[history.length - 1].text = 'Error: ' + (err instanceof Error ? err.message : 'desconocido');
         renderMessages();
