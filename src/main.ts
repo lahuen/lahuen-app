@@ -85,6 +85,7 @@ function renderLayout() {
         <a class="tab" href="#lotes" data-tab="#lotes">Lotes</a>
         <a class="tab" href="#crm" data-tab="#crm">CRM</a>
         <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
+        <a class="tab" href="#pos" data-tab="#pos">Ventas</a>
         ${currentRole === 'admin' ? `<a class="tab" href="#audit" data-tab="#audit">Audit</a>` : ''}
       </nav>
       <div class="nav-user">
@@ -175,6 +176,9 @@ function navigateToHash() {
         case '#lotes':
           loadComponent('lotes-dashboard', view);
           break;
+        case '#pos':
+          loadComponent('pos-dashboard', view);
+          break;
         case '#audit':
           loadComponent('audit-dashboard', view);
           break;
@@ -228,6 +232,11 @@ async function loadComponent(name: string, container: HTMLElement, param?: strin
       case 'lotes-dashboard': {
         const { renderLotesDashboard } = await import('./components/lotes-dashboard');
         cleanup = renderLotesDashboard(container) || null;
+        break;
+      }
+      case 'pos-dashboard': {
+        const { renderPosDashboard } = await import('./components/pos-dashboard');
+        cleanup = renderPosDashboard(container) || null;
         break;
       }
       case 'audit-dashboard': {
