@@ -7,8 +7,7 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
 
   container.innerHTML = `
     <div class="page">
-      <div class="toolbar" style="margin-bottom:var(--sp-4);">
-        <h2 class="text-title" style="flex:1;">Agenda</h2>
+      <div class="toolbar">
         <select class="filter-select" id="agenda-filter-type">
           <option value="">Todos los eventos</option>
           <option value="seguimiento">Seguimientos</option>

@@ -8,8 +8,6 @@ import type { Movimiento } from '../lib/types';
 export function renderStockMovimientos(container: HTMLElement): (() => void) | null {
   container.innerHTML = `
     <div class="page">
-      <h1 class="text-title" style="margin-bottom:var(--sp-4);">Movimientos de stock</h1>
-
       <div class="toolbar">
         <select class="filter-select" id="mov-filter-tipo">
           <option value="">Todos</option>
@@ -106,7 +104,7 @@ export function renderStockMovimientos(container: HTMLElement): (() => void) | n
         <td class="text-secondary">${esc(m.motivo)}</td>
         <td>${m.prospectoLocal ? `<a href="#editar/${m.prospectoId}" class="text-accent">${esc(m.prospectoLocal)}</a>` : '<span class="text-tertiary">--</span>'}</td>
         <td class="text-secondary text-xs">${esc((m.vendedor || '').split('@')[0])}</td>
-        <td>${canAnular ? `<button class="btn btn-sm btn-secondary btn-anular" data-anular-id="${m.id}">Anular</button>` : ''}</td>
+        <td>${canAnular ? `<button class="btn btn-xs btn-secondary" data-anular-id="${m.id}">Anular</button>` : ''}</td>
       </tr>`;
     }).join('');
   }
@@ -137,7 +135,7 @@ export function renderStockMovimientos(container: HTMLElement): (() => void) | n
           ${esc(m.motivo)}${m.prospectoLocal ? ' &rarr; ' + esc(m.prospectoLocal) : ''}
           ${m.precioVenta ? ' &middot; ' + formatCurrency(m.precioVenta) : ''}
         </div>
-        ${canAnular ? `<div style="margin-top:var(--sp-2);"><button class="btn btn-sm btn-secondary btn-anular" data-anular-id="${m.id}">Anular</button></div>` : ''}
+        ${canAnular ? `<div style="margin-top:var(--sp-2);"><button class="btn btn-xs btn-secondary" data-anular-id="${m.id}">Anular</button></div>` : ''}
       </div>`;
     }).join('');
   }

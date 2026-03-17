@@ -7,9 +7,20 @@ import { getProspectos, subscribe } from '../lib/store';
 import type { Prospecto } from '../lib/types';
 
 export function renderCrmDashboard(container: HTMLElement): (() => void) | null {
+  let subCleanup: (() => void) | null = null;
+
+  // Check if we should open a sub-view (from legacy hash redirect)
+  const storedSubview = localStorage.getItem('lahuen_crm_subview');
+  if (storedSubview) localStorage.removeItem('lahuen_crm_subview');
+  let subView: 'crm' | 'agenda' = storedSubview === 'agenda' ? 'agenda' : 'crm';
 
   container.innerHTML = `
     <div class="page">
+      <div class="view-toggle" id="crm-subnav" style="margin-bottom:var(--sp-4);">
+        <button class="view-toggle-btn ${subView === 'crm' ? 'active' : ''}" data-subview="crm">CRM</button>
+        <button class="view-toggle-btn ${subView === 'agenda' ? 'active' : ''}" data-subview="agenda">Agenda</button>
+      </div>
+      <div id="crm-content"${subView !== 'crm' ? ' style="display:none;"' : ''}>
       <div class="stat-grid" id="kpi-grid" style="margin-bottom:var(--sp-5);">
         <div class="stat-card"><p class="stat-label">Pendientes</p><p class="stat-value text-warning" id="stat-pendiente">--</p></div>
         <div class="stat-card"><p class="stat-label">Contactados</p><p class="stat-value text-accent" id="stat-contactado">--</p></div>
@@ -59,8 +70,45 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
 
       <!-- Mobile cards view -->
       <div class="crm-cards" id="crm-cards"></div>
+      </div>
+      <div id="crm-subcontent"${subView === 'crm' ? ' style="display:none;"' : ''}></div>
     </div>
   `;
+
+  // Sub-navigation (CRM / Agenda)
+  const crmContent = document.getElementById('crm-content')!;
+  const crmSubcontent = document.getElementById('crm-subcontent')!;
+
+  document.getElementById('crm-subnav')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-subview]') as HTMLElement | null;
+    if (!btn) return;
+    const newSub = btn.dataset.subview as typeof subView;
+    if (newSub === subView) return;
+    subView = newSub;
+    document.querySelectorAll('#crm-subnav .view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.subview === subView);
+    });
+    loadCrmSubView();
+  });
+
+  function loadCrmSubView() {
+    if (subCleanup) { subCleanup(); subCleanup = null; }
+    if (subView === 'crm') {
+      crmContent.style.display = '';
+      crmSubcontent.style.display = 'none';
+      crmSubcontent.innerHTML = '';
+    } else {
+      crmContent.style.display = 'none';
+      crmSubcontent.style.display = '';
+      crmSubcontent.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+      import('./agenda-dashboard').then(({ renderAgendaDashboard }) => {
+        subCleanup = renderAgendaDashboard(crmSubcontent) || null;
+      });
+    }
+  }
+
+  // Load sub-view if redirected from legacy hash
+  if (subView !== 'crm') loadCrmSubView();
 
   const searchEl = document.getElementById('crm-search') as HTMLInputElement;
   const filterResultado = document.getElementById('crm-filter-resultado') as HTMLSelectElement;
@@ -212,5 +260,8 @@ export function renderCrmDashboard(container: HTMLElement): (() => void) | null 
     }
   }
 
-  return () => unsub();
+  return () => {
+    unsub();
+    if (subCleanup) { subCleanup(); subCleanup = null; }
+  };
 }

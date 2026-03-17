@@ -14,9 +14,21 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   const storedView = localStorage.getItem('lahuen_stock_view');
   let viewMode: 'list' | 'treemap' = storedView === 'treemap' ? 'treemap' : 'list';
   let treemapCleanup: (() => void) | null = null;
+  let subCleanup: (() => void) | null = null;
+
+  // Check if we should open a sub-view (from legacy hash redirect)
+  const storedSubview = localStorage.getItem('lahuen_stock_subview');
+  if (storedSubview) localStorage.removeItem('lahuen_stock_subview');
+  let subView: 'stock' | 'movimientos' | 'lotes' = (storedSubview === 'movimientos' || storedSubview === 'lotes') ? storedSubview : 'stock';
 
   container.innerHTML = `
     <div class="page">
+      <div class="view-toggle" id="stock-subnav" style="margin-bottom:var(--sp-4);">
+        <button class="view-toggle-btn ${subView === 'stock' ? 'active' : ''}" data-subview="stock">Stock</button>
+        <button class="view-toggle-btn ${subView === 'movimientos' ? 'active' : ''}" data-subview="movimientos">Movimientos</button>
+        <button class="view-toggle-btn ${subView === 'lotes' ? 'active' : ''}" data-subview="lotes">Lotes</button>
+      </div>
+      <div id="stock-content"${subView !== 'stock' ? ' style="display:none;"' : ''}>
       <div class="stat-grid" style="margin-bottom:var(--sp-4);">
         <div class="stat-card"><p class="stat-label">Unidades totales</p><p class="stat-value" id="stock-total">--</p></div>
         <div class="stat-card"><p class="stat-label">Valor total</p><p class="stat-value text-accent" id="stock-value">--</p></div>
@@ -123,8 +135,51 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
       <div class="stock-list" id="stock-grid">
         <div class="empty-state"><p>Cargando...</p></div>
       </div>
+      </div>
+      <div id="stock-subcontent"${subView === 'stock' ? ' style="display:none;"' : ''}></div>
     </div>
   `;
+
+  // Sub-navigation (Stock / Movimientos / Lotes)
+  const stockContent = document.getElementById('stock-content')!;
+  const stockSubcontent = document.getElementById('stock-subcontent')!;
+
+  document.getElementById('stock-subnav')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-subview]') as HTMLElement | null;
+    if (!btn) return;
+    const newSub = btn.dataset.subview as typeof subView;
+    if (newSub === subView) return;
+    subView = newSub;
+    document.querySelectorAll('#stock-subnav .view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.subview === subView);
+    });
+    loadSubView();
+  });
+
+  function loadSubView() {
+    if (subCleanup) { subCleanup(); subCleanup = null; }
+    if (subView === 'stock') {
+      stockContent.style.display = '';
+      stockSubcontent.style.display = 'none';
+      stockSubcontent.innerHTML = '';
+    } else {
+      stockContent.style.display = 'none';
+      stockSubcontent.style.display = '';
+      stockSubcontent.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+      if (subView === 'movimientos') {
+        import('./stock-movimientos').then(({ renderStockMovimientos }) => {
+          subCleanup = renderStockMovimientos(stockSubcontent) || null;
+        });
+      } else {
+        import('./lotes-dashboard').then(({ renderLotesDashboard }) => {
+          subCleanup = renderLotesDashboard(stockSubcontent) || null;
+        });
+      }
+    }
+  }
+
+  // Load sub-view if redirected from legacy hash
+  if (subView !== 'stock') loadSubView();
 
   // Toggle add form
   const addBtn = document.getElementById('add-product-btn')!;
@@ -662,5 +717,6 @@ export function renderStockDashboard(container: HTMLElement): (() => void) | nul
   return () => {
     unsub();
     if (treemapCleanup) { treemapCleanup(); treemapCleanup = null; }
+    if (subCleanup) { subCleanup(); subCleanup = null; }
   };
 }

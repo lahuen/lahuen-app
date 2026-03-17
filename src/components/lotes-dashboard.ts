@@ -17,14 +17,13 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
 
   container.innerHTML = `
     <div class="page">
-      <div class="toolbar" style="margin-bottom:var(--sp-4);">
-        <h2 class="text-title" style="flex:1;margin:0;">Lotes</h2>
-        <select class="form-control" id="lote-filter" style="width:auto;padding:6px 10px;font-size:var(--text-xs);">
+      <div class="toolbar">
+        <select class="filter-select" id="lote-filter">
           <option value="all">Todos</option>
           <option value="expiring">Por vencer (7d)</option>
           <option value="expired">Vencidos</option>
         </select>
-        <select class="form-control" id="lote-product-filter" style="width:auto;padding:6px 10px;font-size:var(--text-xs);">
+        <select class="filter-select" id="lote-product-filter">
           <option value="">Todos los productos</option>
         </select>
         <span id="lote-count" class="badge badge-neutral">--</span>

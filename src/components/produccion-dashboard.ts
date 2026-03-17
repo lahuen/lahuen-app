@@ -70,8 +70,7 @@ export function renderProduccionDashboard(container: HTMLElement): (() => void) 
         </div>
       </div>
 
-      <div class="toolbar" style="margin-bottom:var(--sp-4);">
-        <h2 class="text-title" style="flex:1;margin:0;">Produccion</h2>
+      <div class="toolbar">
         <button class="btn btn-primary btn-sm" id="add-siembra-btn">+ Siembra</button>
         <span id="siembra-count" class="badge badge-neutral">--</span>
       </div>

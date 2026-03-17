@@ -81,11 +81,8 @@ function renderLayout() {
       </button>
       <nav class="tab-nav" id="tab-nav">
         <a class="tab" href="#stock" data-tab="#stock">Stock</a>
-        <a class="tab" href="#movimientos" data-tab="#movimientos">Movimientos</a>
-        <a class="tab" href="#lotes" data-tab="#lotes">Lotes</a>
-        <a class="tab" href="#crm" data-tab="#crm">CRM</a>
-        <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
         <a class="tab" href="#pos" data-tab="#pos">Ventas</a>
+        <a class="tab" href="#crm" data-tab="#crm">CRM</a>
         <a class="tab" href="#produccion" data-tab="#produccion">Produccion</a>
         ${currentRole === 'admin' ? `<a class="tab" href="#audit" data-tab="#audit">Audit</a>` : ''}
       </nav>
@@ -154,7 +151,14 @@ function navigateToHash() {
     // Update active tab
     document.querySelectorAll('#tab-nav .tab').forEach(tab => {
       const tabHash = (tab as HTMLElement).dataset.tab || '';
-      tab.classList.toggle('active', hash === tabHash || (hash.startsWith('#editar/') && tabHash === '#crm'));
+      tab.classList.toggle('active',
+        hash === tabHash
+        || (hash.startsWith('#editar/') && tabHash === '#crm')
+        || (hash === '#nuevo' && tabHash === '#crm')
+        || (hash === '#movimientos' && tabHash === '#stock')
+        || (hash === '#lotes' && tabHash === '#stock')
+        || (hash === '#agenda' && tabHash === '#crm')
+      );
     });
 
     if (hash.startsWith('#editar/')) {
@@ -169,13 +173,19 @@ function navigateToHash() {
           loadComponent('crm-dashboard', view);
           break;
         case '#agenda':
-          loadComponent('agenda-dashboard', view);
+          // Legacy redirect: open CRM with agenda sub-view
+          localStorage.setItem('lahuen_crm_subview', 'agenda');
+          loadComponent('crm-dashboard', view);
           break;
         case '#movimientos':
-          loadComponent('stock-movimientos', view);
+          // Legacy redirect: open Stock with movimientos sub-view
+          localStorage.setItem('lahuen_stock_subview', 'movimientos');
+          loadComponent('stock-dashboard', view);
           break;
         case '#lotes':
-          loadComponent('lotes-dashboard', view);
+          // Legacy redirect: open Stock with lotes sub-view
+          localStorage.setItem('lahuen_stock_subview', 'lotes');
+          loadComponent('stock-dashboard', view);
           break;
         case '#pos':
           loadComponent('pos-dashboard', view);

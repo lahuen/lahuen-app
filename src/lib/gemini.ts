@@ -1,6 +1,6 @@
 import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 import { app } from './firebase';
-import { getProductos, getLotes, getMovimientos, getProspectos } from './store';
+import { getProductos, getLotes, getMovimientos, getProspectos, getSiembras } from './store';
 import { computeFunnel } from './funnel';
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
@@ -317,13 +317,29 @@ function buildAssistantContext(): string {
     }
   }
 
+  // Produccion / Siembras
+  const siembras = getSiembras();
+  const siembrasActivas = siembras.filter(s => s.estado === 'activa');
+  if (siembrasActivas.length > 0) {
+    sections.push(`PRODUCCION: ${siembrasActivas.length} siembras activas`);
+    for (const s of siembrasActivas) {
+      const daysLeft = Math.ceil((s.estimadoCosecha.toDate().getTime() - now) / 86400000);
+      const estimado = Math.round(s.cantidad * (1 - s.mermaEstimada / 100));
+      sections.push(`  - ${s.productoNombre}: ${s.cantidad} plantas, cosecha en ${daysLeft}d, rinde est. ~${estimado}${s.ubicacion ? ', ' + s.ubicacion : ''}`);
+    }
+  }
+  const cosechadasTotal = siembras.filter(s => s.estado === 'cosechada').length;
+  if (cosechadasTotal) sections.push(`COSECHAS HISTORICAS: ${cosechadasTotal}`);
+
   // App guide
   sections.push(`GUIA DE USO:
 - Stock: ver productos, KPIs, treemap. Boton "+ Producto" para crear.
 - Movimientos: historial de entradas/salidas, buscar, anular operaciones.
 - Lotes: seguimiento de lotes por producto con vencimiento y ubicacion.
 - CRM: prospectos comerciales, seguimiento, estado (frio/templado/caliente/cerrado/perdido).
-- Agenda: timeline de seguimientos y visitas pendientes.
+- Agenda: timeline de seguimientos, visitas y cosechas pendientes.
+- Produccion: seguimiento de siembras activas, progreso, cosechar cuando estan listas (graduacion a stock).
+- Ventas (POS): carrito de compras, seleccionar productos, confirmar venta, generar QR de pago.
 - Asistente: registrar movimientos en lenguaje natural (ej: "cosechamos 200 lechuga", "venta 50 rucula a El Roble").
 - Para registrar una entrada: decir "cosechamos X de [producto]" o "entraron X [producto]".
 - Para registrar una venta: decir "vendimos X [producto] a [cliente]".
