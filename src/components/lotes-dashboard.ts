@@ -1,7 +1,11 @@
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { esc } from '../lib/sanitize';
-import { formatDate, formatCurrency } from '../lib/format';
+import { formatDate, formatCurrency, toInputDate } from '../lib/format';
 import { getLotes, getProductos, subscribe } from '../lib/store';
 import { computeLoteHealth, computeDaysRemaining, computeShelfLifePercent } from '../lib/stock-metrics';
+import { showToast } from '../lib/toast';
+import { logAudit } from '../lib/audit';
 import type { Lote } from '../lib/types';
 
 type FilterType = 'all' | 'expiring' | 'expired';
@@ -9,6 +13,7 @@ type FilterType = 'all' | 'expiring' | 'expired';
 export function renderLotesDashboard(container: HTMLElement): (() => void) | null {
   let filter: FilterType = 'all';
   let productFilter = '';
+  let editingLoteId: string | null = null;
 
   container.innerHTML = `
     <div class="page">
@@ -45,6 +50,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
               <th>Ubicacion</th>
               <th>Ingreso</th>
               <th>Estado</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="lote-tbody"></tbody>
@@ -60,6 +66,68 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
 
   filterEl.addEventListener('change', () => { filter = filterEl.value as FilterType; rebuild(); });
   productFilterEl.addEventListener('change', () => { productFilter = productFilterEl.value; rebuild(); });
+
+  // Edit/save/cancel delegation on table
+  document.getElementById('lote-table-wrap')!.addEventListener('click', handleAction);
+  // Edit/save/cancel delegation on cards
+  document.getElementById('lote-cards')!.addEventListener('click', handleAction);
+
+  function handleAction(e: Event) {
+    const target = e.target as HTMLElement;
+
+    // Edit button
+    const editBtn = target.closest('[data-edit]') as HTMLElement | null;
+    if (editBtn) {
+      editingLoteId = editingLoteId === editBtn.dataset.edit ? null : editBtn.dataset.edit!;
+      rebuild();
+      return;
+    }
+
+    // Cancel button
+    if (target.closest('[data-cancel]')) {
+      editingLoteId = null;
+      rebuild();
+      return;
+    }
+
+    // Save button
+    const saveBtn = target.closest('[data-save]') as HTMLElement | null;
+    if (saveBtn) {
+      saveLote(saveBtn.dataset.save!);
+      return;
+    }
+  }
+
+  async function saveLote(loteId: string) {
+    const form = document.querySelector(`[data-id="${loteId}"].lote-edit-row, .lote-edit-form[data-id="${loteId}"]`) as HTMLElement | null;
+    if (!form) return;
+
+    const numero = (form.querySelector('[data-field="numero"]') as HTMLInputElement).value.trim();
+    const vencStr = (form.querySelector('[data-field="vencimiento"]') as HTMLInputElement).value;
+    const ubicacion = (form.querySelector('[data-field="ubicacion"]') as HTMLInputElement).value.trim();
+
+    if (!numero) {
+      showToast('El numero de lote es obligatorio', 'error');
+      return;
+    }
+
+    try {
+      const updates: Record<string, unknown> = {
+        numero,
+        ubicacion,
+        vencimiento: vencStr ? Timestamp.fromDate(new Date(vencStr + 'T00:00:00')) : null,
+      };
+      await updateDoc(doc(db, 'lotes', loteId), updates);
+
+      const lote = getLotes().find(l => l.id === loteId);
+      logAudit('update', 'lotes', loteId, lote?.productoNombre || numero, `lote: ${numero}`);
+
+      editingLoteId = null;
+      showToast('Lote actualizado', 'success');
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : 'Error'}`, 'error');
+    }
+  }
 
   const unsub = subscribe(rebuild, ['productos', 'lotes']);
   rebuild();
@@ -138,6 +206,33 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
       const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
       const statusLabel = health === 'expired' ? 'Vencido' : health === 'danger' ? 'Critico' : health === 'warning' ? 'Por vencer' : health === 'depleted' ? 'Agotado' : 'OK';
       const statusCls = health === 'expired' || health === 'danger' ? 'badge-danger' : health === 'warning' ? 'badge-warning' : 'badge-success';
+      const isEditing = editingLoteId === l.id;
+
+      let editRow = '';
+      if (isEditing) {
+        editRow = `<tr class="lote-edit-row" data-id="${l.id}">
+          <td colspan="10">
+            <div class="lote-edit-form">
+              <div class="form-group">
+                <label class="form-label">Lote</label>
+                <input type="text" class="form-control" data-field="numero" value="${esc(l.numero)}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Vencimiento</label>
+                <input type="date" class="form-control" data-field="vencimiento" value="${toInputDate(l.vencimiento)}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Ubicacion</label>
+                <input type="text" class="form-control" data-field="ubicacion" value="${esc(l.ubicacion || '')}" placeholder="Ej: Camara fria" />
+              </div>
+              <div style="display:flex;gap:var(--sp-2);align-items:end;">
+                <button class="btn btn-sm btn-primary" data-save="${l.id}">Guardar</button>
+                <button class="btn btn-sm btn-secondary" data-cancel>Cancelar</button>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      }
 
       return `<tr>
         <td><strong>${esc(l.productoNombre)}</strong></td>
@@ -149,7 +244,10 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
         <td>${esc(l.ubicacion || '--')}</td>
         <td>${formatDate(l.fechaIngreso)}</td>
         <td><span class="badge ${statusCls}">${statusLabel}</span></td>
-      </tr>`;
+        <td><button class="btn btn-xs btn-secondary" data-edit="${l.id}" title="Editar lote">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button></td>
+      </tr>${editRow}`;
     }).join('');
 
     // Render cards (mobile)
@@ -160,15 +258,43 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
       const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
       const borderCls = health === 'expired' || health === 'danger' ? 'lote-card-danger' : health === 'warning' ? 'lote-card-warning' : '';
 
+      const isEditing = editingLoteId === l.id;
+      let editForm = '';
+      if (isEditing) {
+        editForm = `<div class="lote-edit-form" style="margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--color-border);" data-id="${l.id}">
+          <div class="form-group">
+            <label class="form-label">Lote</label>
+            <input type="text" class="form-control" data-field="numero" value="${esc(l.numero)}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Vencimiento</label>
+            <input type="date" class="form-control" data-field="vencimiento" value="${toInputDate(l.vencimiento)}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ubicacion</label>
+            <input type="text" class="form-control" data-field="ubicacion" value="${esc(l.ubicacion || '')}" placeholder="Ej: Camara fria" />
+          </div>
+          <div style="display:flex;gap:var(--sp-2);">
+            <button class="btn btn-sm btn-primary" data-save="${l.id}">Guardar</button>
+            <button class="btn btn-sm btn-secondary" data-cancel>Cancelar</button>
+          </div>
+        </div>`;
+      }
+
       return `<div class="lote-card ${borderCls}">
         <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--sp-2);">
           <div>
             <strong>${esc(l.productoNombre)}</strong>
             <div class="text-xs text-secondary">${esc(l.numero)} ${l.ubicacion ? '· ' + esc(l.ubicacion) : ''}</div>
           </div>
-          <span class="badge ${health === 'expired' || health === 'danger' ? 'badge-danger' : health === 'warning' ? 'badge-warning' : 'badge-success'}">
-            ${l.cantidad} uds
-          </span>
+          <div style="display:flex;gap:var(--sp-2);align-items:center;">
+            <span class="badge ${health === 'expired' || health === 'danger' ? 'badge-danger' : health === 'warning' ? 'badge-warning' : 'badge-success'}">
+              ${l.cantidad} uds
+            </span>
+            <button class="btn btn-xs btn-secondary" data-edit="${l.id}" title="Editar lote">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
         </div>
         <div class="lote-shelf-life">
           <div class="shelf-life-bar"><div class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></div></div>
@@ -177,6 +303,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
           </span>
         </div>
         <div class="text-xs text-tertiary" style="margin-top:var(--sp-2);">Ingreso: ${formatDate(l.fechaIngreso)}</div>
+        ${editForm}
       </div>`;
     }).join('');
   }

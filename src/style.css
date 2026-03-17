@@ -793,6 +793,18 @@ tr.stk-row-warning td:first-child { box-shadow: inset 3px 0 0 var(--color-warnin
 .lote-card-danger { border-left: 3px solid var(--color-danger); }
 .lote-card-warning { border-left: 3px solid var(--color-warning); }
 
+.lote-edit-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: var(--sp-2);
+  align-items: end;
+  padding: var(--sp-3);
+}
+.lote-edit-row td { padding: 0 !important; }
+@media (max-width: 768px) {
+  .lote-edit-form { grid-template-columns: 1fr; }
+}
+
 /* ── Movement Cards ─────────────────────────────────────────────────────── */
 
 .mov-cards { display: none; }

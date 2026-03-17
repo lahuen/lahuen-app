@@ -3,7 +3,7 @@ import { db, auth } from './firebase';
 
 export async function logAudit(
   action: 'create' | 'update' | 'delete',
-  col: 'prospectos' | 'productos',
+  col: 'prospectos' | 'productos' | 'lotes',
   docId: string,
   docLabel: string,
   changes?: string,

@@ -1,5 +1,5 @@
 import { recordSale } from '../lib/stock';
-import { getProductos, getProspectos, subscribe } from '../lib/store';
+import { getProductos, getProspectos, getLotes, subscribe } from '../lib/store';
 import { formatCurrency } from '../lib/format';
 import { esc } from '../lib/sanitize';
 import { showToast } from '../lib/toast';
@@ -10,6 +10,19 @@ interface CartItem {
   cantidad: number;
   precioUnitario: number;
   unidad: string;
+}
+
+/** Pick best lote by FEFO (first expiry first out) from local cache */
+function findLocalFefoLote(productoId: string): string | undefined {
+  const lotes = getLotes()
+    .filter(l => l.productoId === productoId && l.cantidad > 0)
+    .sort((a, b) => {
+      if (!a.vencimiento && !b.vencimiento) return 0;
+      if (!a.vencimiento) return 1;
+      if (!b.vencimiento) return -1;
+      return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
+    });
+  return lotes[0]?.id;
 }
 
 export function renderPosDashboard(container: HTMLElement): (() => void) | null {
@@ -158,8 +171,22 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
     }
   });
 
-  // Confirm sale
-  document.getElementById('pos-confirm')!.addEventListener('click', processSale);
+  // Confirm sale (two-step: first click asks, second confirms)
+  let confirmPending = false;
+  const confirmBtn = document.getElementById('pos-confirm') as HTMLButtonElement;
+  confirmBtn.addEventListener('click', () => {
+    if (cart.length === 0 || isProcessing) return;
+    if (!confirmPending) {
+      const total = cart.reduce((sum, item) => sum + item.cantidad * item.precioUnitario, 0);
+      const count = cart.reduce((sum, item) => sum + item.cantidad, 0);
+      confirmBtn.textContent = `Confirmar ${count} items por ${formatCurrency(total)}?`;
+      confirmBtn.classList.replace('btn-primary', 'btn-danger');
+      confirmPending = true;
+      return;
+    }
+    confirmPending = false;
+    processSale();
+  });
 
   // Keyboard shortcuts
   function handleKeyboard(e: KeyboardEvent) {
@@ -246,16 +273,7 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
   function renderCart() {
     const el = document.getElementById('pos-cart-items');
     if (!el) return;
-    const confirmBtn = document.getElementById('pos-confirm') as HTMLButtonElement;
-
-    if (cart.length === 0) {
-      el.innerHTML = '<div class="pos-cart-empty"><p class="text-secondary">Carrito vacio</p></div>';
-      document.getElementById('pos-total')!.textContent = formatCurrency(0);
-      if (confirmBtn) confirmBtn.disabled = true;
-      return;
-    }
-
-    if (confirmBtn) confirmBtn.disabled = false;
+    resetConfirmBtn();
 
     el.innerHTML = cart.map((item, i) => `
       <div class="pos-cart-row" data-index="${i}">
@@ -307,6 +325,15 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
     `).join('');
   }
 
+  function resetConfirmBtn() {
+    const btn = document.getElementById('pos-confirm') as HTMLButtonElement;
+    if (!btn) return;
+    confirmPending = false;
+    btn.classList.replace('btn-danger', 'btn-primary');
+    btn.disabled = cart.length === 0;
+    btn.textContent = 'Confirmar Venta';
+  }
+
   async function processSale() {
     if (isProcessing || cart.length === 0) return;
 
@@ -315,50 +342,62 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
     for (const item of cart) {
       const p = productos.find(pr => pr.id === item.productoId);
       if (!p || p.cantidad < item.cantidad) {
-        showToast(`Stock insuficiente: ${item.productoNombre}`, 'error');
+        showToast(`Stock insuficiente: ${item.productoNombre} (disponible: ${p?.cantidad ?? 0})`, 'error');
+        resetConfirmBtn();
         return;
       }
     }
 
     isProcessing = true;
-    const confirmBtn = document.getElementById('pos-confirm') as HTMLButtonElement;
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Procesando...';
+    const btn = document.getElementById('pos-confirm') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
 
     const total = cart.reduce((sum, item) => sum + item.cantidad * item.precioUnitario, 0);
     const errors: string[] = [];
+    const sold: CartItem[] = [];
 
-    for (const item of cart) {
-      try {
-        await recordSale(
-          item.productoId,
-          item.productoNombre,
-          item.cantidad,
-          selectedProspectoId,
-          selectedProspectoLocal,
-          item.precioUnitario,
-        );
-      } catch (err) {
-        errors.push(`${item.productoNombre}: ${err instanceof Error ? err.message : 'Error'}`);
+    try {
+      for (const item of cart) {
+        try {
+          const fefoLoteId = findLocalFefoLote(item.productoId);
+          await recordSale(
+            item.productoId,
+            item.productoNombre,
+            item.cantidad,
+            selectedProspectoId,
+            selectedProspectoLocal,
+            item.precioUnitario,
+            fefoLoteId,
+          );
+          sold.push(item);
+        } catch (err) {
+          errors.push(`${item.productoNombre}: ${err instanceof Error ? err.message : 'Error'}`);
+        }
       }
-    }
 
-    isProcessing = false;
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = 'Confirmar Venta';
-
-    if (errors.length > 0) {
-      showToast(`Errores: ${errors.join(', ')}`, 'error');
-    } else {
-      showToast('Venta registrada', 'success');
-      cart = [];
-      selectedProspectoId = undefined;
-      selectedProspectoLocal = undefined;
-      const ci = document.getElementById('pos-cliente-search') as HTMLInputElement;
-      if (ci) ci.value = '';
+      if (errors.length > 0 && sold.length > 0) {
+        // Partial success: remove sold items, keep failed ones
+        cart = cart.filter(c => !sold.includes(c));
+        showToast(`${sold.length} vendidos, ${errors.length} con error: ${errors.join(', ')}`, 'error');
+      } else if (errors.length > 0) {
+        showToast(`Error: ${errors.join(', ')}`, 'error');
+      } else {
+        showToast('Venta registrada', 'success');
+        cart = [];
+        selectedProspectoId = undefined;
+        selectedProspectoLocal = undefined;
+        const ci = document.getElementById('pos-cliente-search') as HTMLInputElement;
+        if (ci) ci.value = '';
+        import('../lib/qr-pago').then(m => m.showQrPagoModal(total)).catch(() => {});
+      }
+    } catch (err) {
+      showToast(`Error inesperado: ${err instanceof Error ? err.message : 'Error'}`, 'error');
+    } finally {
+      isProcessing = false;
       renderCart();
       renderProducts();
-      import('../lib/qr-pago').then(m => m.showQrPagoModal(total)).catch(() => {});
+      resetConfirmBtn();
     }
   }
 

@@ -7,6 +7,14 @@
         { "fieldPath": "motivo", "order": "ASCENDING" },
         { "fieldPath": "fecha", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "lotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "productoId", "order": "ASCENDING" },
+        { "fieldPath": "cantidad", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
