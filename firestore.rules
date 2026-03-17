@@ -78,6 +78,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /siembras/{docId} {
+      allow read: if isTeamMember();
+      allow create: if isTeamMember()
+                    && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTeamMember();
+      allow delete: if false;
+    }
+
     match /stock_reports/{docId} {
       allow read: if isTeamMember();
       allow create: if isTeamMember()

@@ -1,14 +1,15 @@
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Producto, Lote, Prospecto, Movimiento } from './types';
+import type { Producto, Lote, Prospecto, Movimiento, Siembra } from './types';
 
-export type StoreCollection = 'productos' | 'lotes' | 'prospectos' | 'movimientos';
+export type StoreCollection = 'productos' | 'lotes' | 'prospectos' | 'movimientos' | 'siembras';
 type Listener = (changed: StoreCollection) => void;
 
 let productos: (Producto & { id: string })[] = [];
 let lotes: (Lote & { id: string })[] = [];
 let prospectos: (Prospecto & { id: string })[] = [];
 let movimientos: (Movimiento & { id: string })[] = [];
+let siembras: (Siembra & { id: string })[] = [];
 let initialized = false;
 
 const listeners = new Map<Listener, StoreCollection[] | null>();
@@ -17,6 +18,7 @@ export function getProductos() { return productos; }
 export function getLotes() { return lotes; }
 export function getProspectos() { return prospectos; }
 export function getMovimientos() { return movimientos; }
+export function getSiembras() { return siembras; }
 export function isReady() { return initialized; }
 
 /**
@@ -62,5 +64,11 @@ export function initStore() {
     query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(500)),
     (snap) => { movimientos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Movimiento & { id: string })); notify('movimientos'); },
     (err) => console.error('store movimientos:', err),
+  );
+
+  onSnapshot(
+    query(collection(db, 'siembras'), orderBy('fechaSiembra', 'desc')),
+    (snap) => { siembras = snap.docs.map(d => ({ id: d.id, ...d.data() } as Siembra & { id: string })); notify('siembras'); },
+    (err) => console.error('store siembras:', err),
   );
 }

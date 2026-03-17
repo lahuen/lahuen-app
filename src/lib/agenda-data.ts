@@ -1,12 +1,12 @@
 import type { Timestamp } from 'firebase/firestore';
-import type { Prospecto, Producto, Movimiento, Lote } from './types';
+import type { Prospecto, Producto, Movimiento, Lote, Siembra } from './types';
 import { formatDate } from './format';
 import { getResultadoBadge } from './constants';
 
 export interface AgendaEvent {
   id: string;
   date: Date;
-  type: 'seguimiento' | 'visita' | 'vencimiento' | 'entrega';
+  type: 'seguimiento' | 'visita' | 'vencimiento' | 'entrega' | 'cosecha';
   title: string;
   subtitle: string;
   badgeCls: string;
@@ -29,6 +29,7 @@ export function buildEvents(
   productos: (Producto & { id: string })[],
   movimientos: (Movimiento & { id: string })[],
   lotes?: (Lote & { id: string })[],
+  siembras?: (Siembra & { id: string })[],
 ): AgendaEvent[] {
   const events: AgendaEvent[] = [];
 
@@ -93,6 +94,22 @@ export function buildEvents(
           linkHash: '#stock',
         });
       }
+    }
+  }
+
+  if (siembras) {
+    for (const s of siembras) {
+      if (s.estado !== 'activa') continue;
+      events.push({
+        id: `cos-${s.id}`,
+        date: s.estimadoCosecha.toDate(),
+        type: 'cosecha',
+        title: `Cosecha: ${s.productoNombre}`,
+        subtitle: `${s.cantidad} plantas · ${s.ubicacion || 'Sin ubicacion'}`,
+        badgeCls: 'badge-accent',
+        badgeLabel: 'Cosecha',
+        linkHash: '#produccion',
+      });
     }
   }
 

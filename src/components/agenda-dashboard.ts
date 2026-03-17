@@ -1,6 +1,6 @@
 import { esc } from '../lib/sanitize';
 import { buildEvents, groupByDate, type AgendaEvent } from '../lib/agenda-data';
-import { getProspectos, getProductos, getMovimientos, getLotes, subscribe } from '../lib/store';
+import { getProspectos, getProductos, getMovimientos, getLotes, getSiembras, subscribe } from '../lib/store';
 
 export function renderAgendaDashboard(container: HTMLElement): (() => void) | null {
   let filterType = '';
@@ -15,6 +15,7 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
           <option value="visita">Visitas</option>
           <option value="vencimiento">Vencimientos</option>
           <option value="entrega">Entregas</option>
+          <option value="cosecha">Cosechas</option>
         </select>
         <span id="agenda-count" class="badge badge-neutral">--</span>
       </div>
@@ -32,7 +33,7 @@ export function renderAgendaDashboard(container: HTMLElement): (() => void) | nu
 
   function rebuild() {
     const movVentas = getMovimientos().filter(m => m.motivo === 'venta').slice(0, 50);
-    let events = buildEvents(getProspectos(), getProductos(), movVentas, getLotes());
+    let events = buildEvents(getProspectos(), getProductos(), movVentas, getLotes(), getSiembras());
     if (filterType) events = events.filter(e => e.type === filterType);
 
     const groups = groupByDate(events);

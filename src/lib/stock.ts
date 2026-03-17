@@ -283,3 +283,71 @@ export async function recordStockAnulacion(movimientoId: string): Promise<void> 
   logAudit('update', 'productos', original.productoId, original.productoNombre,
     `anulacion de ${original.tipo} ${original.cantidad} (${original.motivo})`);
 }
+
+/**
+ * Graduate a siembra to stock: mark as cosechada, create lote + movimiento, increment product qty.
+ */
+export async function graduarSiembra(
+  siembraId: string,
+  productoId: string,
+  productoNombre: string,
+  cantidadCosechada: number,
+  ubicacion: string,
+): Promise<void> {
+  const loteNumero = autoLoteNumero();
+
+  await runTransaction(db, async (tx) => {
+    // ALL reads first
+    const siembraRef = doc(db, 'siembras', siembraId);
+    const siembraSnap = await tx.get(siembraRef);
+    if (!siembraSnap.exists()) throw new Error('Siembra no encontrada');
+
+    const prodRef = doc(db, 'productos', productoId);
+    const prodSnap = await tx.get(prodRef);
+    if (!prodSnap.exists()) throw new Error('Producto no encontrado');
+
+    // ALL writes after reads
+    tx.update(siembraRef, {
+      estado: 'cosechada',
+      cantidadCosechada,
+      fechaCosecha: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
+    });
+
+    const currentQty = prodSnap.data().cantidad as number;
+    tx.update(prodRef, {
+      cantidad: currentQty + cantidadCosechada,
+      updatedAt: Timestamp.now(),
+      updatedBy: auth.currentUser?.email || '',
+    });
+
+    const loteRef = doc(collection(db, 'lotes'));
+    tx.set(loteRef, {
+      productoId,
+      productoNombre,
+      numero: loteNumero,
+      cantidad: cantidadCosechada,
+      vencimiento: null,
+      ubicacion,
+      fechaIngreso: Timestamp.now(),
+      createdBy: auth.currentUser?.uid || '',
+      createdAt: Timestamp.now(),
+    });
+
+    const movRef = doc(collection(db, 'movimientos'));
+    tx.set(movRef, {
+      tipo: 'entrada',
+      productoId,
+      productoNombre,
+      cantidad: cantidadCosechada,
+      fecha: Timestamp.now(),
+      motivo: 'cosecha' as const,
+      siembraId,
+      vendedor: auth.currentUser?.email || '',
+      createdBy: auth.currentUser?.uid || '',
+      createdAt: Timestamp.now(),
+    });
+  });
+  logAudit('update', 'siembras', siembraId, productoNombre, `cosecha: +${cantidadCosechada}`);
+}

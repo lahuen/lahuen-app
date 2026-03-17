@@ -70,7 +70,7 @@ function renderLayout() {
     <header class="app-header">
       <div class="app-brand">
         <img src="logo.svg" alt="Lahuen" class="nav-logo" />
-        <span>CRM</span>
+        <span>APP</span>
       </div>
       <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
@@ -86,6 +86,7 @@ function renderLayout() {
         <a class="tab" href="#crm" data-tab="#crm">CRM</a>
         <a class="tab" href="#agenda" data-tab="#agenda">Agenda</a>
         <a class="tab" href="#pos" data-tab="#pos">Ventas</a>
+        <a class="tab" href="#produccion" data-tab="#produccion">Produccion</a>
         ${currentRole === 'admin' ? `<a class="tab" href="#audit" data-tab="#audit">Audit</a>` : ''}
       </nav>
       <div class="nav-user">
@@ -179,6 +180,9 @@ function navigateToHash() {
         case '#pos':
           loadComponent('pos-dashboard', view);
           break;
+        case '#produccion':
+          loadComponent('produccion-dashboard', view);
+          break;
         case '#audit':
           loadComponent('audit-dashboard', view);
           break;
@@ -237,6 +241,11 @@ async function loadComponent(name: string, container: HTMLElement, param?: strin
       case 'pos-dashboard': {
         const { renderPosDashboard } = await import('./components/pos-dashboard');
         cleanup = renderPosDashboard(container) || null;
+        break;
+      }
+      case 'produccion-dashboard': {
+        const { renderProduccionDashboard } = await import('./components/produccion-dashboard');
+        cleanup = renderProduccionDashboard(container) || null;
         break;
       }
       case 'audit-dashboard': {

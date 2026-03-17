@@ -92,4 +92,26 @@ export interface Movimiento {
   prospectoLocal?: string;
   precioVenta?: number;
   anulacionDe?: string;
+  siembraId?: string;
+}
+
+export type SiembraEstado = 'activa' | 'cosechada' | 'cancelada';
+
+export interface Siembra {
+  id?: string;
+  productoId: string;
+  productoNombre: string;
+  cantidad: number;
+  fechaSiembra: Timestamp;
+  estimadoCosecha: Timestamp;
+  mermaEstimada: number;
+  ubicacion: string;
+  estado: SiembraEstado;
+  cantidadCosechada?: number;
+  fechaCosecha?: Timestamp;
+  notas: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string;
+  updatedBy?: string;
 }
