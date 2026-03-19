@@ -526,7 +526,7 @@ tbody tr:hover { background: var(--color-accent-muted); }
 
 /* ── QR Pago Modal ─────────────────────────────────────────────────────── */
 .qr-pago-img { display: block; margin: var(--sp-4) auto; max-width: 220px; border-radius: var(--radius-md); }
-.qr-pago-monto { font-size: var(--text-lg); color: var(--color-text); margin: var(--sp-2) 0; }
+.qr-pago-monto { font-size: 1.75rem; font-weight: 700; color: var(--color-accent); margin: var(--sp-2) 0; }
 .qr-pago-alias { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); font-family: monospace; font-size: var(--text-lg); font-weight: var(--weight-semi); margin: var(--sp-2) 0; }
 .qr-pago-info { font-size: var(--text-xs); color: var(--color-text-secondary); margin: var(--sp-2) 0 var(--sp-4); }
 

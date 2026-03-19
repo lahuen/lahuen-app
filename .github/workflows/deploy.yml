@@ -36,7 +36,7 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_PAGO_ALIAS: ${{ secrets.VITE_PAGO_ALIAS }}
           VITE_PAGO_TITULAR: ${{ secrets.VITE_PAGO_TITULAR }}
-          VITE_PAGO_CUIT: ${{ secrets.VITE_PAGO_CUIT }}
+          VITE_PAGO_CVU: ${{ secrets.VITE_PAGO_CVU }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
