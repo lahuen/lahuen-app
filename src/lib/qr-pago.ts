@@ -5,15 +5,14 @@ import { formatCurrency } from './format';
 const ALIAS = import.meta.env.VITE_PAGO_ALIAS || 'lahuen.mcp';
 const TITULAR = import.meta.env.VITE_PAGO_TITULAR || 'COOPERATIVA DE TRABAJO LAHUEN';
 const CVU = import.meta.env.VITE_PAGO_CVU || '0000003100006408028165';
-const MP_LINK = `https://link.mercadopago.com.ar/${ALIAS}`;
 
 export async function showQrPagoModal(monto?: number): Promise<void> {
   document.getElementById('qr-pago-modal')?.remove();
 
   let qrDataUrl: string;
   try {
-    // QR encodes the MP link so any QR reader opens MP directly
-    qrDataUrl = await QRCode.toDataURL(MP_LINK, { width: 220, margin: 2 });
+    // QR encodes the alias — MP app recognizes it when scanned
+    qrDataUrl = await QRCode.toDataURL(ALIAS, { width: 220, margin: 2 });
   } catch {
     showToast('Error generando QR', 'error');
     return;
@@ -74,7 +73,6 @@ export async function showQrPagoModal(monto?: number): Promise<void> {
       await navigator.share({
         title: 'Pago Lahuen',
         text: `Pago por ${montoFormatted}\nAlias: ${ALIAS}\nCVU: ${CVU}\n${TITULAR}`,
-        url: MP_LINK,
       });
     } catch {
       // User cancelled share — ignore
