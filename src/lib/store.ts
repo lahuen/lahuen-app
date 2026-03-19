@@ -11,6 +11,7 @@ let prospectos: (Prospecto & { id: string })[] = [];
 let movimientos: (Movimiento & { id: string })[] = [];
 let siembras: (Siembra & { id: string })[] = [];
 let initialized = false;
+const unsubs: (() => void)[] = [];
 
 const listeners = new Map<Listener, StoreCollection[] | null>();
 
@@ -42,33 +43,46 @@ export function initStore() {
   if (initialized) return;
   initialized = true;
 
-  onSnapshot(
+  unsubs.push(onSnapshot(
     query(collection(db, 'productos'), orderBy('nombre')),
     (snap) => { productos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Producto & { id: string })); notify('productos'); },
     (err) => console.error('store productos:', err),
-  );
+  ));
 
-  onSnapshot(
+  unsubs.push(onSnapshot(
     query(collection(db, 'lotes')),
     (snap) => { lotes = snap.docs.map(d => ({ id: d.id, ...d.data() } as Lote & { id: string })); notify('lotes'); },
     () => {},
-  );
+  ));
 
-  onSnapshot(
+  unsubs.push(onSnapshot(
     query(collection(db, 'prospectos'), orderBy('createdAt', 'desc')),
     (snap) => { prospectos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Prospecto & { id: string })); notify('prospectos'); },
     (err) => console.error('store prospectos:', err),
-  );
+  ));
 
-  onSnapshot(
+  unsubs.push(onSnapshot(
     query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(500)),
     (snap) => { movimientos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Movimiento & { id: string })); notify('movimientos'); },
     (err) => console.error('store movimientos:', err),
-  );
+  ));
 
-  onSnapshot(
+  unsubs.push(onSnapshot(
     query(collection(db, 'siembras'), orderBy('fechaSiembra', 'desc')),
     (snap) => { siembras = snap.docs.map(d => ({ id: d.id, ...d.data() } as Siembra & { id: string })); notify('siembras'); },
     (err) => console.error('store siembras:', err),
-  );
+  ));
+}
+
+/** Stop all Firestore listeners and reset state (call on logout) */
+export function destroyStore() {
+  unsubs.forEach(fn => fn());
+  unsubs.length = 0;
+  productos = [];
+  lotes = [];
+  prospectos = [];
+  movimientos = [];
+  siembras = [];
+  initialized = false;
+  listeners.clear();
 }

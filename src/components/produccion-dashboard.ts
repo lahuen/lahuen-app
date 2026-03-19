@@ -17,7 +17,7 @@ export function renderProduccionDashboard(container: HTMLElement): (() => void) 
 
   container.innerHTML = `
     <div class="page">
-      <div class="stat-grid" style="margin-bottom:var(--sp-4);">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:var(--sp-4);">
         <div class="stat-card"><p class="stat-label">Siembras activas</p><p class="stat-value" id="prod-active">--</p></div>
         <div class="stat-card"><p class="stat-label">Plantas en desarrollo</p><p class="stat-value" id="prod-plants">--</p></div>
         <div class="stat-card"><p class="stat-label">Proxima cosecha</p><p class="stat-value text-accent" id="prod-next">--</p></div>
@@ -287,8 +287,18 @@ export function renderProduccionDashboard(container: HTMLElement): (() => void) 
 
     document.getElementById('prod-active')!.textContent = String(activas.length);
     document.getElementById('prod-plants')!.textContent = totalPlants.toLocaleString('es-AR');
-    document.getElementById('prod-next')!.textContent = nextDays != null ? (nextDays <= 0 ? 'Hoy!' : `${nextDays}d`) : '--';
+    
+    const nextEl = document.getElementById('prod-next')!;
+    if (nextDays != null && nextDays <= 1) {
+      nextEl.className = 'stat-value text-danger';
+      nextEl.textContent = nextDays <= 0 ? (nextDays < 0 ? 'Expirada' : 'Hoy!') : `${nextDays}d`;
+    } else {
+      nextEl.className = 'stat-value text-accent';
+      nextEl.textContent = nextDays != null ? `${nextDays}d` : '--';
+    }
+
     document.getElementById('prod-harvested')!.textContent = String(cosechadasMes);
+
     document.getElementById('siembra-count')!.textContent = `${activas.length} activas`;
 
     // Active list

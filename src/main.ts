@@ -2,7 +2,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { renderLogin } from './components/login';
 import { getUsuario } from './lib/usuarios';
-import { initStore } from './lib/store';
+import { initStore, destroyStore } from './lib/store';
 import { esc } from './lib/sanitize';
 import './style.css';
 
@@ -33,13 +33,12 @@ root.innerHTML = `<div class="empty-state" style="min-height:100vh;"><p>Cargando
 
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    const LEGACY_ADMINS = ['cbd.preparados@gmail.com', 'walter.medina.pourcel@gmail.com'];
     try {
       const u = await getUsuario(user.email || '');
-      currentRole = u?.role || (LEGACY_ADMINS.includes(user.email || '') ? 'admin' : null);
+      currentRole = u?.role || null;
       currentNombre = u?.nombre || null;
     } catch {
-      currentRole = LEGACY_ADMINS.includes(user.email || '') ? 'admin' : null;
+      currentRole = null;
       currentNombre = null;
     }
     if (!auth.currentUser) return;
@@ -58,6 +57,7 @@ onAuthStateChanged(auth, async (user) => {
     layoutReady = false;
     window.removeEventListener('hashchange', navigateToHash);
     if (cleanup) { cleanup(); cleanup = null; }
+    destroyStore();
     renderLogin(root);
   }
 });

@@ -13,14 +13,17 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build
@@ -31,7 +34,10 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-      - uses: actions/upload-pages-artifact@v3
+          VITE_PAGO_ALIAS: ${{ secrets.VITE_PAGO_ALIAS }}
+          VITE_PAGO_TITULAR: ${{ secrets.VITE_PAGO_TITULAR }}
+          VITE_PAGO_CUIT: ${{ secrets.VITE_PAGO_CUIT }}
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 
@@ -43,12 +49,12 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   deploy-rules:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: w9jds/firebase-action@master
         with:
           args: deploy --only firestore:rules,firestore:indexes --project ${{ secrets.VITE_FIREBASE_PROJECT_ID }}

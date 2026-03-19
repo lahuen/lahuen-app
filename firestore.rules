@@ -2,41 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Temporary hardcoded fallback until usuarios collection is seeded
-    function isTeamMemberLegacy() {
-      return request.auth != null &&
-             request.auth.token.email in [
-               'cbd.preparados@gmail.com',
-               'gmedina86@gmail.com',
-               'fefox911@gmail.com',
-               'lahuencoop@gmail.com',
-               'rodrigocbdthc@gmail.com',
-               'walter.medina.pourcel@gmail.com'
-             ];
-    }
-
     function isTeamMember() {
-      return request.auth != null && (
-        exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email))
-        || isTeamMemberLegacy()
-      );
-    }
-
-    // Temporary legacy fallback for admin until usuarios collection is seeded
-    function isAdminLegacy() {
       return request.auth != null &&
-             request.auth.token.email in [
-               'cbd.preparados@gmail.com',
-               'walter.medina.pourcel@gmail.com'
-             ];
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email));
     }
 
     function isAdmin() {
-      return request.auth != null && (
-        (exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email)) &&
-         get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.role == 'admin')
-        || isAdminLegacy()
-      );
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.token.email)) &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.role == 'admin';
     }
 
     // Anyone authenticated can read their own user doc (needed for login check)

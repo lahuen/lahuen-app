@@ -2,9 +2,9 @@ import QRCode from 'qrcode';
 import { showToast } from './toast';
 import { formatCurrency } from './format';
 
-const ALIAS = 'lahuen.coop.ar';
-const TITULAR = 'COOP DE TRAB LAHUEN LTDA';
-const CUIT = '30-71842618-5';
+const ALIAS = import.meta.env.VITE_PAGO_ALIAS || 'lahuen.coop.ar';
+const TITULAR = import.meta.env.VITE_PAGO_TITULAR || 'COOP DE TRAB LAHUEN LTDA';
+const CUIT = import.meta.env.VITE_PAGO_CUIT || '30-71842618-5';
 
 export async function showQrPagoModal(monto?: number): Promise<void> {
   document.getElementById('qr-pago-modal')?.remove();
