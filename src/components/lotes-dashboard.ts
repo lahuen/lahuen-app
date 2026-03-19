@@ -43,6 +43,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
               <th>Producto</th>
               <th>Lote</th>
               <th>Cantidad</th>
+              <th>Precio</th>
               <th>Vencimiento</th>
               <th>Dias</th>
               <th>Vida util</th>
@@ -102,6 +103,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
     if (!form) return;
 
     const numero = (form.querySelector('[data-field="numero"]') as HTMLInputElement).value.trim();
+    const precioVal = (form.querySelector('[data-field="precio"]') as HTMLInputElement).value;
     const vencStr = (form.querySelector('[data-field="vencimiento"]') as HTMLInputElement).value;
     const ubicacion = (form.querySelector('[data-field="ubicacion"]') as HTMLInputElement).value.trim();
 
@@ -110,9 +112,12 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
       return;
     }
 
+    const precio = precioVal !== '' ? Number(precioVal) : 0;
+
     try {
       const updates: Record<string, unknown> = {
         numero,
+        precio,
         ubicacion,
         vencimiento: vencStr ? Timestamp.fromDate(new Date(vencStr + 'T00:00:00')) : null,
       };
@@ -134,8 +139,8 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
   function rebuild() {
     const allLotes = getLotes();
     const productos = getProductos();
-    const priceMap = new Map<string, number>();
-    for (const p of productos) priceMap.set(p.id, p.precio);
+    const basePriceMap = new Map<string, number>();
+    for (const p of productos) basePriceMap.set(p.id, p.precio);
 
     // Populate product filter dropdown
     const uniqueProducts = [...new Set(allLotes.filter(l => l.cantidad > 0).map(l => l.productoNombre))].sort();
@@ -181,7 +186,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
     for (const l of allActive) {
       if (!l.vencimiento) continue;
       const vTime = l.vencimiento.toDate().getTime();
-      const price = priceMap.get(l.productoId) || 0;
+      const price = l.precio ?? basePriceMap.get(l.productoId) ?? 0;
       if (vTime <= now) {
         kpiExpired++;
         riskValue += l.cantidad * price;
@@ -207,14 +212,21 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
       const statusCls = health === 'expired' || health === 'danger' ? 'badge-danger' : health === 'warning' ? 'badge-warning' : 'badge-success';
       const isEditing = editingLoteId === l.id;
 
+      const lotePrice = l.precio ?? basePriceMap.get(l.productoId) ?? 0;
+      const isCustomPrice = l.precio != null && l.precio !== basePriceMap.get(l.productoId);
+
       let editRow = '';
       if (isEditing) {
         editRow = `<tr class="lote-edit-row" data-id="${l.id}">
-          <td colspan="10">
+          <td colspan="11">
             <div class="lote-edit-form">
               <div class="form-group">
                 <label class="form-label">Lote</label>
                 <input type="text" class="form-control" data-field="numero" value="${esc(l.numero)}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Precio</label>
+                <input type="number" class="form-control" data-field="precio" value="${lotePrice}" min="0" step="1" />
               </div>
               <div class="form-group">
                 <label class="form-label">Vencimiento</label>
@@ -237,6 +249,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
         <td><strong>${esc(l.productoNombre)}</strong></td>
         <td>${esc(l.numero)}</td>
         <td>${l.cantidad}</td>
+        <td>${isCustomPrice ? `<span class="text-accent">${formatCurrency(lotePrice)}</span>` : formatCurrency(lotePrice)}</td>
         <td>${l.vencimiento ? formatDate(l.vencimiento) : '--'}</td>
         <td class="${days != null && days <= 7 ? 'text-danger' : ''}">${days != null ? (days <= 0 ? 'Vencido' : days + 'd') : '--'}</td>
         <td><div class="shelf-life-bar"><div class="shelf-life-fill shelf-life-${health}" style="width:${percent}%"></div></div></td>
@@ -257,6 +270,8 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
       const percent = computeShelfLifePercent(l.fechaIngreso, l.vencimiento);
       const borderCls = health === 'expired' || health === 'danger' ? 'lote-card-danger' : health === 'warning' ? 'lote-card-warning' : '';
 
+      const cardLotePrice = l.precio ?? basePriceMap.get(l.productoId) ?? 0;
+      const cardIsCustomPrice = l.precio != null && l.precio !== basePriceMap.get(l.productoId);
       const isEditing = editingLoteId === l.id;
       let editForm = '';
       if (isEditing) {
@@ -264,6 +279,10 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
           <div class="form-group">
             <label class="form-label">Lote</label>
             <input type="text" class="form-control" data-field="numero" value="${esc(l.numero)}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Precio</label>
+            <input type="number" class="form-control" data-field="precio" value="${cardLotePrice}" min="0" step="1" />
           </div>
           <div class="form-group">
             <label class="form-label">Vencimiento</label>
@@ -284,7 +303,7 @@ export function renderLotesDashboard(container: HTMLElement): (() => void) | nul
         <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--sp-2);">
           <div>
             <strong>${esc(l.productoNombre)}</strong>
-            <div class="text-xs text-secondary">${esc(l.numero)} ${l.ubicacion ? '· ' + esc(l.ubicacion) : ''}</div>
+            <div class="text-xs text-secondary">${esc(l.numero)} ${l.ubicacion ? '· ' + esc(l.ubicacion) : ''} · ${cardIsCustomPrice ? '<span class="text-accent">' + formatCurrency(cardLotePrice) + '</span>' : formatCurrency(cardLotePrice)}</div>
           </div>
           <div style="display:flex;gap:var(--sp-2);align-items:center;">
             <span class="badge ${health === 'expired' || health === 'danger' ? 'badge-danger' : health === 'warning' ? 'badge-warning' : 'badge-success'}">

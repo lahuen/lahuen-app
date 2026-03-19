@@ -58,6 +58,7 @@ export interface Lote {
   productoNombre: string;
   numero: string;
   cantidad: number;
+  precio?: number;
   vencimiento: Timestamp | null;
   ubicacion: string;
   fechaIngreso: Timestamp;

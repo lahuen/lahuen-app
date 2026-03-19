@@ -234,12 +234,24 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
     grid.innerHTML = filtered.map(p => {
       const inCart = cart.find(c => c.productoId === p.id);
       const isZero = p.cantidad <= 0;
+      const fefoLote = getLotes()
+        .filter(l => l.productoId === p.id && l.cantidad > 0)
+        .sort((a, b) => {
+          if (!a.vencimiento && !b.vencimiento) return 0;
+          if (!a.vencimiento) return 1;
+          if (!b.vencimiento) return -1;
+          return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
+        })[0];
+      const lotePrice = fefoLote?.precio;
+      const hasCustomPrice = lotePrice != null && lotePrice !== p.precio;
       return `
         <div class="pos-product-card ${isZero ? 'pos-product-disabled' : ''}" data-id="${p.id}">
           <div class="pos-product-name">${esc(p.nombre)}</div>
           <div class="pos-product-meta">
             <span class="text-secondary text-xs">${p.cantidad} ${esc(p.unidad)}</span>
-            <span class="text-accent text-xs">${formatCurrency(p.precio)}</span>
+            ${hasCustomPrice
+              ? `<span class="text-accent text-xs">${formatCurrency(lotePrice!)} <s class="text-tertiary">${formatCurrency(p.precio)}</s></span>`
+              : `<span class="text-accent text-xs">${formatCurrency(p.precio)}</span>`}
           </div>
           ${inCart ? `<span class="pos-product-in-cart">${inCart.cantidad} en carrito</span>` : ''}
         </div>`;
@@ -258,11 +270,21 @@ export function renderPosDashboard(container: HTMLElement): (() => void) | null 
       }
       existing.cantidad++;
     } else {
+      // Use FEFO lote price if available, fallback to producto base price
+      const fefoLote = getLotes()
+        .filter(l => l.productoId === productoId && l.cantidad > 0)
+        .sort((a, b) => {
+          if (!a.vencimiento && !b.vencimiento) return 0;
+          if (!a.vencimiento) return 1;
+          if (!b.vencimiento) return -1;
+          return a.vencimiento.toDate().getTime() - b.vencimiento.toDate().getTime();
+        })[0];
+      const precio = fefoLote?.precio ?? producto.precio;
       cart.push({
         productoId,
         productoNombre: producto.nombre,
         cantidad: 1,
-        precioUnitario: producto.precio,
+        precioUnitario: precio,
         unidad: producto.unidad,
       });
     }
